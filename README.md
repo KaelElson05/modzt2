@@ -10,12 +10,3 @@ ModZT2 is a modern, lightweight, and user-friendly Zoo Tycoon 2 mod manager desi
 ✅ Batch Actions
 ✅ Persistent Settings
 ✅ Log Output
-
-WIP Features:
-Mod descriptions (pulled from ZT2 Download Library)
-
-Mod preview images
-
-Profile management
-
-One-click updates for supported mods
