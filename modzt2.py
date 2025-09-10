@@ -298,9 +298,6 @@ def make_ui():
             iid = tree.insert("", tk.END, values=(name, "Enabled" if enabled else "Disabled"))
             tree.item(iid, tags=("enabled" if enabled else "disabled",))
 
-        tree.tag_configure("enabled", background="#d4ffd4")   # light green
-        tree.tag_configure("disabled", background="#ffd4d4")  # light red
-
     # --- Control buttons ---
     ctl = ttk.Frame(left, padding=6)
     ctl.pack(fill=tk.X, pady=4)
