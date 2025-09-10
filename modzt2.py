@@ -3,6 +3,7 @@ import os, shutil, sqlite3, subprocess
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import ttkbootstrap as tb
+import threading, time
 
 # ---------------- 2. Constants & Globals ----------------
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -167,6 +168,43 @@ def export_load_order():
 
     messagebox.showinfo("Exported", f"Load order exported to:\n{path}")
 
+# ---------------- 6b. Auto Detection ----------------
+def watch_mods(root, refresh_func, interval=5):
+    """Background thread that checks for new/removed mods and notifies main thread."""
+    def worker():
+        last_snapshot = set()
+        while True:
+            if not GAME_PATH:
+                time.sleep(interval)
+                continue
+
+            mods_dir = GAME_PATH
+            disabled_dir = os.path.join(GAME_PATH, "Mods", "Disabled")
+
+            found = set()
+            for folder in [mods_dir, disabled_dir]:
+                if os.path.isdir(folder):
+                    for f in os.listdir(folder):
+                        if f.lower().endswith(".z2f"):
+                            found.add((f, 1 if folder == mods_dir else 0))
+
+            if found != last_snapshot:
+                def update_db_and_refresh():
+                    for mod_name, enabled in found:
+                        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
+                        if cursor.fetchone()[0] == 0:
+                            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod_name, enabled))
+                    conn.commit()
+                    refresh_func()
+
+                # schedule safely in main thread
+                root.after(0, update_db_and_refresh)
+                last_snapshot = found
+
+            time.sleep(interval)
+
+    threading.Thread(target=worker, daemon=True).start()
+
 # ---------------- 7. UI Builder ----------------
 def make_ui():
     current_theme = {"name": "darkly"}
@@ -325,18 +363,56 @@ def make_ui():
 
     # --- Theme toggle ---
     def apply_log_theme():
+        # Log panel colors
         if current_theme["name"] == "darkly":
-            log_text.config(background="#111", foreground="#0f0")
+            log_text.configure(bg="#1e1e1e", fg="white", insertbackground="white")
+            style = ttk.Style()
 
-            tree.tag_configure("enabled", background="#1e3821", foreground="#cfc")   # dark green
-            tree.tag_configure("disabled", background="#382121", foreground="#fcc")  # dark red
+            # Treeview dark style
+            style.configure(
+                "Dark.Treeview",
+                background="#1e1e1e",
+                fieldbackground="#1e1e1e",
+                foreground="white",
+                rowheight=22,
+            )
+            style.configure(
+                "Dark.Treeview.Heading",
+                background="#2d2d2d",
+                foreground="white"
+            )
+            style.map(
+                "Dark.Treeview",
+                background=[("selected", "#3d3d3d")],
+                foreground=[("selected", "white")]
+            )
+
             tree.configure(style="Dark.Treeview")
 
         else:
-            log_text.config(background="#fff", foreground="#000")
+            log_text.configure(bg="white", fg="black", insertbackground="black")
+            style = ttk.Style()
+            style.theme_use("clam")
 
-            tree.tag_configure("enabled", background="#d4ffd4", foreground="#000")
-            tree.tag_configure("disabled", background="#ffd4d4", foreground="#000")
+            # Treeview light style
+            style.configure(
+                "Light.Treeview",
+                background="white",
+                fieldbackground="white",
+                foreground="black",
+                rowheight=22,
+            )
+            style.configure(
+                "Light.Treeview.Heading",
+                background="#f0f0f0d5",
+                foreground="black"
+            )
+            style.map(
+                "Light.Treeview",
+                background=[("selected", "#cce5ff")],
+                foreground=[("selected", "black")]
+            )
+
             tree.configure(style="Light.Treeview")
 
     def toggle_theme():
@@ -356,6 +432,7 @@ def make_ui():
     detect_existing_mods()
     refresh_tree()
     apply_log_theme()
+    watch_mods(root, refresh_tree)
 
     return root, refresh_tree
 
