@@ -846,7 +846,7 @@ settings = load_settings()
 system_theme = get_system_theme()
 root = tb.Window(themename="darkly" if system_theme == "dark" else "cosmo")
 root.title(f"ModZT2 v{APP_VERSION}")
-root.geometry("1400x700")
+root.geometry("1400x900")
 
 def auto_switch_theme():
     """Auto-switch between dark/light when system theme changes."""
@@ -885,7 +885,6 @@ if os.path.isfile(BANNER_FILE):
 _tt = ttk.Label(banner, text="ModZT2", font=("Segoe UI", 20, "bold"), bootstyle="inverse-dark")
 _tt.pack(side=tk.LEFT)
 
-# Toolbar
 toolbar = ttk.Frame(root, padding=6, bootstyle="primary")
 toolbar.pack(fill=tk.X)
 
@@ -1085,115 +1084,138 @@ file_list.column("Modified", width=180, anchor="center")
 file_list.pack(fill=tk.BOTH, expand=True)
 explorer_split.add(file_list, weight=3)
 
-bundle_split = ttk.PanedWindow(bundles_tab, orient=tk.HORIZONTAL)
+content_frame = ttk.Frame(bundles_tab)
+content_frame.pack(fill=tk.BOTH, expand=True)
+
+bundle_split = ttk.PanedWindow(content_frame, orient=tk.HORIZONTAL)
 bundle_split.pack(fill=tk.BOTH, expand=True)
 
-bundle_list_frame = ttk.Frame(bundle_split)
-bundle_list = tk.Listbox(bundle_list_frame, exportselection=False)
-bundle_list.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
-bundle_split.add(bundle_list_frame, weight=1)
+left_panel = ttk.Frame(bundle_split, width=260, padding=(4, 6))
+left_panel.pack_propagate(False)
+bundle_split.add(left_panel, weight=1)
+
+ttk.Label(left_panel, text="Bundles", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
+search_row = ttk.Frame(left_panel)
+search_row.pack(fill=tk.X, pady=(0, 6))
+
+bundle_search_var = tk.StringVar()
+ttk.Entry(search_row, textvariable=bundle_search_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+ttk.Button(search_row, text="Clear", bootstyle="secondary-outline",
+           command=lambda: (bundle_search_var.set(""), refresh_bundles_list())).pack(side=tk.LEFT, padx=(6, 0))
+
+bundle_list_frame = ttk.Frame(left_panel)
+bundle_list_frame.pack(fill=tk.BOTH, expand=True)
+
+bundle_list_scroll = ttk.Scrollbar(bundle_list_frame, orient="vertical")
+bundle_list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+bundle_list = tk.Listbox(bundle_list_frame, exportselection=False, height=20, yscrollcommand=bundle_list_scroll.set)
+bundle_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+bundle_list_scroll.config(command=bundle_list.yview)
+
+if bundle_list.size() == 0:
+    bundle_list.insert(tk.END, "(No bundles yet)")
 
 bundle_preview = ttk.Frame(bundle_split, padding=8)
-bundle_split.add(bundle_preview, weight=2)
+bundle_split.add(bundle_preview, weight=3)
 
-ttk.Label(bundle_preview, text="Bundle Preview", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0,6))
+ttk.Label(bundle_preview, text="Bundle Preview", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 6))
 bundle_name_lbl = ttk.Label(bundle_preview, text="(Select a bundle)", bootstyle="secondary")
-bundle_name_lbl.pack(anchor="w", pady=(0,6))
+bundle_name_lbl.pack(anchor="w", pady=(0, 6))
 
 preview_tree = ttk.Treeview(bundle_preview, columns=("mod", "status"), show="headings", height=14)
 preview_tree.heading("mod", text="Mod Name")
 preview_tree.heading("status", text="Status")
-preview_tree.pack(fill=tk.BOTH, expand=True, pady=4)
+preview_tree.column("mod", width=280, anchor="w")
+preview_tree.column("status", width=100, anchor="center")
+preview_tree.pack(fill=tk.BOTH, expand=True)
 
 bundle_stats = tk.StringVar(value="0 mods")
-ttk.Label(bundle_preview, textvariable=bundle_stats, bootstyle="info").pack(anchor="e", pady=(4,0))
+ttk.Label(bundle_preview, textvariable=bundle_stats, bootstyle="info").pack(anchor="e", pady=(6, 0))
 
 preview_btns = ttk.Frame(bundle_preview)
-preview_btns.pack(fill=tk.X, pady=(4,0))
-ttk.Button(preview_btns, text="Apply Bundle", command=lambda: apply_selected_bundle(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
-ttk.Button(preview_btns, text="Enable All", command=lambda: enable_bundle_mods(), bootstyle="success").pack(side=tk.LEFT, padx=4)
-ttk.Button(preview_btns, text="Disable All", command=lambda: disable_bundle_mods(), bootstyle="warning").pack(side=tk.LEFT, padx=4)
-
-def apply_selected_bundle():
-    sel = bundle_list.curselection()
-    if not sel:
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    name = bundle_list.get(sel[0])
-    apply_bundle(name, text_widget=log_text)
-    refresh_bundle_preview()
-
-def enable_bundle_mods():
-    sel = bundle_list.curselection()
-    if not sel:
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    name = bundle_list.get(sel[0])
-    mods = get_bundle_mods(name)
-    for m in mods:
-        enable_mod(m, text_widget=log_text)
-    refresh_bundle_preview()
-
-def disable_bundle_mods():
-    sel = bundle_list.curselection()
-    if not sel:
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    name = bundle_list.get(sel[0])
-    mods = get_bundle_mods(name)
-    for m in mods:
-        disable_mod(m, text_widget=log_text)
-    refresh_bundle_preview()
+preview_btns.pack(fill=tk.X, pady=(6, 0))
+ttk.Button(preview_btns, text="Apply Bundle", command=lambda: bundle_apply(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
+ttk.Button(preview_btns, text="Enable All", command=lambda: bundle_enable_all(), bootstyle="success").pack(side=tk.LEFT, padx=4)
+ttk.Button(preview_btns, text="Disable All", command=lambda: bundle_disable_all(), bootstyle="warning").pack(side=tk.LEFT, padx=4)
 
 bundle_btns = ttk.Frame(bundles_tab, padding=6)
-bundle_btns.pack(fill=tk.X)
+bundle_btns.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
 
-create_bundle_btn = ttk.Button(bundle_btns, text="Create", command=lambda: on_create_bundle(), bootstyle="secondary")
-create_bundle_btn.pack(side=tk.LEFT, padx=4)
+ttk.Separator(bundles_tab, orient="horizontal").pack(side=tk.BOTTOM, fill=tk.X)
 
-apply_bundle_btn = ttk.Button(bundle_btns, text="Apply", command=lambda: on_apply_bundle(), bootstyle="primary")
-apply_bundle_btn.pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Create", command=lambda: bundle_create_dialog(), bootstyle="secondary").pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Apply", command=lambda: bundle_apply(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Delete", command=lambda: bundle_delete(), bootstyle="danger").pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
 
-delete_bundle_btn = ttk.Button(bundle_btns, text="Delete", command=lambda: on_delete_bundle(), bootstyle="danger")
-delete_bundle_btn.pack(side=tk.LEFT, padx=4)
+def _selected_bundle_name():
+    sel = bundle_list.curselection()
+    if not sel:
+        return None
+    return bundle_list.get(sel[0])
 
-export_bundle_btn = ttk.Button(bundle_btns, text="Export JSON", command=lambda: on_export_bundle())
-export_bundle_btn.pack(side=tk.LEFT, padx=4)
+def refresh_bundles_list():
+    """Reloads the bundle list from DB and reapplies current filter."""
+    global _all_bundle_names_cache
+    # Fetch from DB
+    cursor.execute("SELECT name FROM bundles ORDER BY name ASC")
+    names = [r[0] for r in cursor.fetchall()]
+    _all_bundle_names_cache = names[:]
+    _apply_bundle_filter()
 
-import_bundle_btn = ttk.Button(bundle_btns, text="Import JSON", command=lambda: on_import_bundle())
-import_bundle_btn.pack(side=tk.LEFT, padx=4)
+def _apply_bundle_filter(*_):
+    """Apply search filter to cached bundle names."""
+    query = bundle_search_var.get().strip().lower()
+    bundle_list.delete(0, tk.END)
 
-export_mod_btn = ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: on_export_bundle_as_mod(), bootstyle="success")
-export_mod_btn.pack(side=tk.LEFT, padx=4)
-
-def refresh_bundle_preview(event=None):
-    selection = bundle_list.curselection()
-    if not selection:
+    filtered = [n for n in _all_bundle_names_cache if query in n.lower()]
+    if not filtered:
+        bundle_list.insert(tk.END, "(No bundles yet)" if not _all_bundle_names_cache else "(No matches)")
+        # show empty preview
         bundle_name_lbl.config(text="(Select a bundle)")
         for i in preview_tree.get_children():
             preview_tree.delete(i)
         bundle_stats.set("0 mods")
         return
 
-    bundle_name = bundle_list.get(selection[0])
-    bundle_name_lbl.config(text=bundle_name)
+    for n in filtered:
+        bundle_list.insert(tk.END, n)
 
+
+def refresh_bundle_preview(event=None):
+    """Populate right preview panel for current selection."""
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):  # don't act on empty-state rows
+        bundle_name_lbl.config(text="(Select a bundle)")
+        for i in preview_tree.get_children():
+            preview_tree.delete(i)
+        bundle_stats.set("0 mods")
+        return
+
+    bundle_name_lbl.config(text=name)
+    # Clear tree
     for i in preview_tree.get_children():
         preview_tree.delete(i)
 
-    cursor.execute("SELECT id FROM bundles WHERE name=?", (bundle_name,))
+    # resolve to bundle id -> mods -> enabled status
+    cursor.execute("SELECT id FROM bundles WHERE name=?", (name,))
     row = cursor.fetchone()
     if not row:
+        bundle_stats.set("0 mods")
         return
+
     bundle_id = row[0]
-    cursor.execute("SELECT mod_name FROM bundle_mods WHERE bundle_id=?", (bundle_id,))
+    cursor.execute("SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name", (bundle_id,))
     mods = [r[0] for r in cursor.fetchall()]
 
     enabled_count = 0
     for m in mods:
         cursor.execute("SELECT enabled FROM mods WHERE name=?", (m,))
-        row = cursor.fetchone()
-        status = "Enabled" if row and row[0] else "Disabled"
+        r = cursor.fetchone()
+        status = "Enabled" if r and r[0] else "Disabled"
         if status == "Enabled":
             enabled_count += 1
         preview_tree.insert("", "end", values=(m, status))
@@ -1201,6 +1223,131 @@ def refresh_bundle_preview(event=None):
     bundle_stats.set(f"{enabled_count}/{len(mods)} enabled")
 
 bundle_list.bind("<<ListboxSelect>>", refresh_bundle_preview)
+
+def _bundle_context_menu(event):
+    # select row under cursor
+    idx = bundle_list.nearest(event.y)
+    try:
+        bundle_list.selection_clear(0, tk.END)
+        bundle_list.selection_set(idx)
+    except Exception:
+        pass
+
+    menu = tk.Menu(bundles_tab, tearoff=0)
+    menu.add_command(label="Apply", command=lambda: bundle_apply())
+    menu.add_command(label="Delete", command=lambda: bundle_delete())
+    menu.add_separator()
+    menu.add_command(label="Export JSON", command=lambda: bundle_export_json())
+    try:
+        menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        menu.grab_release()
+
+bundle_list.bind("<Button-3>", _bundle_context_menu)
+
+def bundle_create_dialog():
+    """Dialog to create a bundle and refresh UI when done."""
+    dlg = tk.Toplevel(root)
+    dlg.title("Create Bundle")
+    dlg.geometry("420x500")
+    dlg.transient(root)
+    dlg.grab_set()
+
+    ttk.Label(dlg, text="Bundle name:").pack(anchor='w', padx=8, pady=(8, 2))
+    name_var = tk.StringVar()
+    ttk.Entry(dlg, textvariable=name_var).pack(fill=tk.X, padx=8)
+
+    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w', padx=8, pady=(8, 2))
+    mods_listbox = tk.Listbox(dlg, selectmode=tk.MULTIPLE, height=16)
+    mods_listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+
+    cursor.execute("SELECT name FROM mods ORDER BY name")
+    mods_all = [r[0] for r in cursor.fetchall()]
+    for m in mods_all:
+        mods_listbox.insert(tk.END, m)
+
+    def _do_create():
+        bname = name_var.get().strip()
+        sel = mods_listbox.curselection()
+        selected = [mods_all[i] for i in sel]
+        if not bname or not selected:
+            messagebox.showerror("Invalid", "Provide a name and select at least one mod.", parent=dlg)
+            return
+        ok = create_bundle(bname, selected)
+        if not ok:
+            messagebox.showerror("Error", "Bundle name already exists or invalid.", parent=dlg)
+            return
+        dlg.destroy()
+        refresh_bundles_list()
+        log(f"Created bundle '{bname}' with {len(selected)} mods.", log_text)
+
+    btnrow = ttk.Frame(dlg, padding=6)
+    btnrow.pack(fill=tk.X)
+    ttk.Button(btnrow, text="Create", command=_do_create, bootstyle="success").pack(side=tk.RIGHT, padx=4)
+    ttk.Button(btnrow, text="Cancel", command=dlg.destroy, bootstyle="secondary").pack(side=tk.RIGHT)
+
+def bundle_apply():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    apply_bundle(name, text_widget=log_text)
+    refresh_bundle_preview()
+    refresh_tree()  # in case statuses changed
+
+def bundle_delete():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    if messagebox.askyesno("Delete Bundle", f"Delete bundle '{name}'?"):
+        delete_bundle(name)
+        refresh_bundles_list()
+        log(f"Deleted bundle: {name}", log_text)
+
+def bundle_export_json():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    export_bundle_as_json(name)
+    # no DB change; keep list same
+
+
+def bundle_import_json():
+    import_bundle_from_json()
+    refresh_bundles_list()
+
+def bundle_export_z2f():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    export_bundle_as_mod_ui(name)
+
+def bundle_enable_all():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    mods = get_bundle_mods(name)
+    for m in mods:
+        enable_mod(m, text_widget=log_text)
+    refresh_bundle_preview()
+    refresh_tree()
+
+def bundle_disable_all():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    mods = get_bundle_mods(name)
+    for m in mods:
+        disable_mod(m, text_widget=log_text)
+    refresh_bundle_preview()
+    refresh_tree()
+
+refresh_bundles_list()
 
 log_frame = ttk.Frame(main_frame, padding=6)
 log_frame.pack(side=tk.RIGHT, fill=tk.Y)
