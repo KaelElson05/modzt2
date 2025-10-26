@@ -42,9 +42,6 @@ ModZT2 is an alpha program, but I run it with my game install with no problems. 
 
 ModZT2 is a third-party mod manager for Zoo Tycoon 2. This project is not affiliated with Microsoft, Xbox Game Studios, or Blue Fang Games.
 
-Created by Kael
-🐘 Built for Zoo Tycoon 2 fans.
-
 ---
 
 ## License
@@ -71,3 +68,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
