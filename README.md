@@ -12,7 +12,7 @@ Features of the mod manager include:
   - Track mod folders and load order
   - Detect and resolve file conflicts
 
-  - Group mods into named bundles - Coming soon
+  - Group mods into named bundles
   - Export/import loadouts easily
 
   - Auto-detect Zoo Tycoon 2 in common installation paths
@@ -20,7 +20,7 @@ Features of the mod manager include:
   - Theme and window size saved between sessions
 
   - Threaded background tasks with progress bar
-  - Live action log and recent actions list - Coming soon
+  - Live action log and recent actions list
   - Dark/light themes with one click - Alpha
 
 ---
@@ -70,6 +70,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
