@@ -40,7 +40,7 @@ python modzt2.py
 pyinstaller --onefile --noconsole --icon=assets/icon.ico modzt2.py
 
 ## Notice
-ModZT2 is an alpha program, but I run it with my game install with no problems. If you run into any bugs, please report them on Github Issues!
+ModZT2 is an alpha program. If you run into any bugs, please report them on Github Issues!
 
 This project is not affiliated with Microsoft, Xbox Game Studios, or Blue Fang Games.
 
@@ -70,6 +70,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
