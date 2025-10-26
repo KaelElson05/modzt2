@@ -11,16 +11,23 @@ import platform
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from collections import Counter
+from ttkbootstrap import Window
+import xml.etree.ElementTree as ET
 import ttkbootstrap as tb
 from PIL import Image, ImageTk
 import hashlib
+import zlib
+import io
 import sys
+import re
 
 db_lock = threading.Lock()
 
 # ---------------- Constants ----------------
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 SETTINGS_FILE = "settings.json"
+ZOO_PROFILE = os.path.join("data", "my_zoo.json")
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
 os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -53,6 +60,14 @@ def open_mods_folder():
     if path:
         os.startfile(path)
 
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and PyInstaller."""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 def load_settings():
     """Load settings.json safely, creating defaults if missing."""
     if not os.path.exists(SETTINGS_FILE):
@@ -72,6 +87,283 @@ def save_settings(settings):
     """Save settings.json safely."""
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=4)
+
+def extract_animals_from_z2s(path):
+    """Extract species names from ZT2 world.zt2 task entries like 'Deinonychus:GroomSelf'."""
+    with zipfile.ZipFile(path, "r") as z:
+        world_path = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
+        if not world_path:
+            print("No world.zt2 found.")
+            return []
+
+        raw = z.read(world_path)
+    try:
+        data = zlib.decompress(raw)
+    except zlib.error:
+        try:
+            data = zlib.decompress(raw[4:])
+        except zlib.error:
+            data = raw
+
+    text = data.decode("utf-8", errors="ignore")
+
+    species = re.findall(r'templateID="([A-Za-z0-9_]+):', text)
+
+    ignore = {"staff","educator","guest","guestemotes","restaurant","bathroom",
+              "amusement","worker","viewanimal","binoculars","terrain",
+              "metaltrough_water","adultguestinteractions","smallrockcave_shelter",
+              "seating","viewanimal_cp2","dinoRecoveryBuilding"}
+    animals = [s for s in species if s.lower() not in ignore and len(s) > 2]
+
+    counts = Counter(animals)
+    print(f"Detected {len(counts)} species ({sum(counts.values())} total tasks).")
+    for sp, c in counts.most_common():
+        print(f" - {sp}: {c} task refs")
+    
+    return [{"species": sp, "name": ""} for sp in counts.keys()]
+
+def extract_animals(file_path):
+    """Detect animal entities (animal:/dino:/marine:/bird:) from a ZT2 .z2s save."""
+    with zipfile.ZipFile(file_path, "r") as z:
+        world_path = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
+        if not world_path:
+            print("No world.zt2 found.")
+            return []
+
+        with z.open(world_path) as f:
+            raw = f.read()
+
+        try:
+            data = zlib.decompress(raw)
+        except zlib.error:
+            try:
+                data = zlib.decompress(raw[4:])
+            except zlib.error:
+                data = raw
+
+        text = data.decode("utf-8", errors="ignore")
+
+        pattern = re.compile(
+            r'templateID="(?:animal|dino|marine|bird):([A-Za-z0-9_]+)"',
+            re.IGNORECASE
+        )
+        matches = pattern.findall(text)
+
+        if not matches:
+            pattern2 = re.compile(
+                r'subType="(?:[A-Za-z0-9_]*)(Adult|Young)_[MF]_[0-9]*"',
+                re.IGNORECASE
+            )
+            matches = pattern2.findall(text)
+
+        unique = sorted(set(matches))
+        print(f"Detected {len(unique)} animal templates in {file_path}")
+        for u in unique:
+            print(" -", u)
+        return unique
+
+def list_all_templateids(file_path):
+    """List every distinct templateID string in world.zt2"""
+    with zipfile.ZipFile(file_path, "r") as z:
+        world = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
+        if not world:
+            print("No world.zt2 found.")
+            return
+        raw = z.read(world)
+    try:
+        data = zlib.decompress(raw)
+    except zlib.error:
+        try:
+            data = zlib.decompress(raw[4:])
+        except zlib.error:
+            data = raw
+
+    txt = data.decode("utf-8", errors="ignore")
+
+    ids = re.findall(r'templateID="([^"]+)"', txt)
+    uniq = sorted(set(ids))
+    print(f"Found {len(uniq)} distinct templateIDs.")
+    for u in uniq[:200]:
+        print(u)
+    if len(uniq) > 200:
+        print("… (truncated)")
+    return uniq
+
+def species_name(species_id):
+    """Converts internal Zoo Tycoon 2 species IDs into readable names."""
+    if not species_id:
+        return "Unknown"
+    if species_id.lower().startswith("animal"):
+        species_id = species_id[6:]
+    return species_id.replace("_", " ").title()
+
+def load_zoo_profile():
+    os.makedirs("data", exist_ok=True)
+    if not os.path.exists(ZOO_PROFILE):
+        profile = {"zoo_name": "My Zoo", "zookeeper": os.getenv("USERNAME", "Player"), 
+                   "animals": [], "trade_history": []}
+        save_zoo_profile(profile)
+        return profile
+    with open(ZOO_PROFILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+    
+def save_zoo_profile(data):
+    os.makedirs("data", exist_ok=True)
+    with open(ZOO_PROFILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+def sync_zoo_from_game(game_path=None):
+    profile = load_zoo_profile()
+    species_list = extract_animals_from_z2s(profile)
+    profile["animals"] = species_list
+    save_zoo_profile(profile)
+    all_animals = []
+
+    if not game_path:
+        game_path = settings.get("game_path", "")
+    z2f_dir = os.path.join(game_path, "dlupdates")
+    if os.path.isdir(z2f_dir):
+        for file in os.listdir(z2f_dir):
+            if file.endswith(".z2f"):
+                try:
+                    with zipfile.ZipFile(os.path.join(z2f_dir, file), "r") as z:
+                        for n in z.namelist():
+                            if "animal" in n.lower() and n.lower().endswith(".xml"):
+                                with z.open(n) as f:
+                                    try:
+                                        tree = ET.parse(f)
+                                        root = tree.getroot()
+                                        name = root.findtext("name", default=file.replace(".z2f", ""))
+                                        all_animals.append({"species": name, "name": name})
+                                    except Exception:
+                                        pass
+                except Exception:
+                    pass
+
+    saves_dir = os.path.join(game_path, "Saved Games")
+    if os.path.isdir(saves_dir):
+        for file in os.listdir(saves_dir):
+            if file.endswith(".z2s"):
+                try:
+                    with zipfile.ZipFile(os.path.join(saves_dir, file), "r") as z:
+                        for n in z.namelist():
+                            if n.lower().endswith(".xml"):
+                                with z.open(n) as f:
+                                    xml = ET.parse(f)
+                                    for a in xml.findall(".//Animal"):
+                                        species = a.get("Species", "Unknown")
+                                        name = a.get("Name", "Unnamed")
+                                        all_animals.append({"species": species, "name": name})
+                except Exception:
+                    pass
+
+    unique_animals = {f"{a['species']}|{a['name']}": a for a in all_animals}.values()
+    profile = load_zoo_profile()
+    profile["animals"] = detect_animals_from_latest_save()
+    save_zoo_profile(profile)
+    refresh_zoo_ui(profile)
+    add_zoo_to_market(profile)
+    refresh_market_ui_from_file()
+    messagebox.showinfo(
+        "Zoo Synced",
+        f"Detected {len(profile['animals'])} animals from your latest saved zoo."
+    )
+
+def add_zoo_to_market(profile):
+    """Save the current zoo to the persistent market list."""
+    if not profile or "zoo_name" not in profile:
+        return
+
+    market_data_path = os.path.join("data", "market.json")
+    os.makedirs("data", exist_ok=True)
+
+    if os.path.exists(market_data_path):
+        with open(market_data_path, "r", encoding="utf-8") as f:
+            market = json.load(f)
+    else:
+        market = []
+
+    existing = next((z for z in market if z.get("zoo_name") == profile["zoo_name"]), None)
+    if existing:
+        existing.update(profile)
+    else:
+        market.append(profile)
+
+    with open(market_data_path, "w", encoding="utf-8") as f:
+        json.dump(market, f, indent=2)
+
+def get_zt2_save_dir():
+    """Returns the Zoo Tycoon 2 save directory."""
+    base = os.path.join(os.getenv("APPDATA"), "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "Saved")
+    if os.path.isdir(base):
+        return base
+    alt = os.path.join(os.getenv("USERPROFILE"), "Documents", "Zoo Tycoon 2", "Saved Games")
+    return alt if os.path.isdir(alt) else None
+
+def detect_animals_from_latest_save():
+    saves_dir = get_zt2_save_dir()
+    if not saves_dir:
+        messagebox.showwarning("Zoo Sync", "Could not find the Zoo Tycoon 2 save folder.")
+        return []
+
+    zoo_files = [os.path.join(saves_dir, f) for f in os.listdir(saves_dir) if f.lower().endswith(".z2s")]
+    if not zoo_files:
+        messagebox.showinfo("Zoo Sync", "No .z2s zoo save files found.")
+        return []
+
+    latest = max(zoo_files, key=os.path.getmtime)
+    print(f"Syncing from: {os.path.basename(latest)}")
+    return extract_animals_from_z2s(latest)
+
+def export_zoo_as_json():
+    profile = load_zoo_profile()
+    os.makedirs("data/trades", exist_ok=True)
+    dest = os.path.join("data", "trades", f"{profile['zoo_name'].replace(' ', '_')}.z2s.json")
+    with open(dest, "w", encoding="utf-8") as f:
+        json.dump(profile, f, indent=2)
+    messagebox.showinfo("Exported", f"Your zoo was exported to:\n{dest}")
+
+def import_zoo_json():
+    file = filedialog.askopenfilename(title="Import Zoo", filetypes=[("Zoo JSON", "*.z2s.json")])
+    if not file:
+        return
+
+    with open(file, "r", encoding="utf-8") as f:
+        other = json.load(f)
+
+    market_data_path = os.path.join("data", "market.json")
+    if os.path.exists(market_data_path):
+        with open(market_data_path, "r", encoding="utf-8") as mf:
+            market = json.load(mf)
+    else:
+        market = []
+
+    existing = next((z for z in market if z.get("zoo_name") == other.get("zoo_name")), None)
+    if existing:
+        existing.update(other)
+    else:
+        market.append(other)
+
+    with open(market_data_path, "w", encoding="utf-8") as mf:
+        json.dump(market, mf, indent=2)
+
+    refresh_market_ui_from_file()
+    messagebox.showinfo("Imported", f"Imported zoo: {other.get('zoo_name')}")
+
+def refresh_market_ui_from_file():
+    """Reload the entire market table from market.json."""
+    market_data_path = os.path.join("data", "market.json")
+    if not os.path.exists(market_data_path):
+        return
+
+    with open(market_data_path, "r", encoding="utf-8") as f:
+        market = json.load(f)
+
+    market_tree.delete(*market_tree.get_children())
+
+    for zoo in market:
+        for a in zoo.get("animals", []):
+            market_tree.insert("", "end", values=(zoo.get("zoo_name"), a.get("species", "?"), a.get("name", "")))
 
 def auto_detect_zt2_installation():
     import winreg
@@ -844,9 +1136,15 @@ def export_bundle_as_mod_ui(bundle_name=None):
 # ---------------- UI Construction ----------------
 settings = load_settings()
 system_theme = get_system_theme()
-root = tb.Window(themename="darkly" if system_theme == "dark" else "cosmo")
+root = Window(themename="darkly" if system_theme == "dark" else "cosmo")
 root.title(f"ModZT2 v{APP_VERSION}")
 root.geometry("1400x900")
+
+icon_path = resource_path("modzt2.ico")
+if os.path.exists(icon_path):
+    root.iconbitmap(icon_path)
+else:
+    print(f"[!] Icon not found: {icon_path}")
 
 def auto_switch_theme():
     """Auto-switch between dark/light when system theme changes."""
@@ -918,7 +1216,6 @@ tools_menu_btn.pack(side=tk.LEFT, padx=4)
 
 ttk.Separator(toolbar, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
-# Theme toggle
 def toggle_theme():
     if root.style.theme_use() == 'darkly':
         root.style.theme_use('cosmo')
@@ -941,7 +1238,7 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT2", command=lambda: messagebox.showinfo("About", "ModZT2 v1.0.1\nCreated by Kael"))
+help_menu.add_command(label="About ModZT2", command=lambda: messagebox.showinfo("About", "ModZT2 v1.0.2\nCreated by Kael"))
 help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05"))
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
@@ -997,19 +1294,19 @@ search_var = tk.StringVar()
 search_entry = ttk.Entry(search_frame, textvariable=search_var)
 search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
-columns = ("Name", "Status", "Size", "Value")
 mods_tree_frame = ttk.Frame(mods_tab)
-mods_tree_frame.pack(fill=tk.BOTH, expand=True)
+mods_tree_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
 
-mods_tree_scroll = ttk.Scrollbar(mods_tab)
+mods_tree_scroll = ttk.Scrollbar(mods_tree_frame)
 mods_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
 mods_tree = ttk.Treeview(
-    mods_tab,
+    mods_tree_frame,
     columns=("Name", "Status", "Size", "Modified"),
     show="headings",
     yscrollcommand=mods_tree_scroll.set
 )
+mods_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 mods_tree_scroll.config(command=mods_tree.yview)
 
 mods_tree.column("Name", width=250, anchor="w")
@@ -1022,14 +1319,15 @@ mods_tree.heading("Status", text="Status", command=lambda: sort_tree_by("Status"
 mods_tree.heading("Size", text="Size (MB)", command=lambda: sort_tree_by("Size"))
 mods_tree.heading("Modified", text="Last Modified", command=lambda: sort_tree_by("Modified"))
 
-mods_tree.pack(fill=tk.BOTH, expand=True)
-
-mods_tree_scroll.config(command=mods_tree.yview)
-
 mods_tree.bind("<Double-1>", lambda e: show_mod_details())
 
-mod_count_label = ttk.Label(mods_tab, text="Total mods: 0 | Enabled: 0 | Disabled: 0", bootstyle="secondary")
-mod_count_label.pack(anchor="w", padx=6, pady=(4, 0))
+mod_count_label = ttk.Label(
+    mods_tab, text="Total mods: 0 | Enabled: 0 | Disabled: 0", bootstyle="secondary"
+)
+mod_count_label.pack(anchor="w", padx=6, pady=(2, 0))
+
+mod_btns = ttk.Frame(mods_tab, padding=6)
+mod_btns.pack(fill=tk.X, pady=(0, 4))
 
 mods_menu = tk.Menu(root, tearoff=0)
 mods_menu.add_command(label="Enable", command=lambda: enable_selected_mod())
@@ -1151,6 +1449,40 @@ ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()
 ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
 ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
 
+trade_split = ttk.PanedWindow(orient=tk.HORIZONTAL)
+trade_split.pack(fill=tk.BOTH, expand=True)
+
+zoo_frame = ttk.Frame(trade_split, padding=8)
+trade_split.add(zoo_frame, weight=1)
+
+ttk.Label(zoo_frame, text="My Zoo", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+zoo_name_lbl = ttk.Label(zoo_frame, text="", bootstyle="secondary")
+zoo_name_lbl.pack(anchor="w", pady=(0, 6))
+
+animal_tree = ttk.Treeview(zoo_frame, columns=("species", "name"), show="headings", height=18)
+animal_tree.heading("species", text="Species")
+animal_tree.heading("name", text="Name")
+animal_tree.pack(fill=tk.BOTH, expand=True)
+
+zoo_btns = ttk.Frame(zoo_frame)
+zoo_btns.pack(fill=tk.X, pady=(6, 0))
+ttk.Button(zoo_btns, text="Sync from Game", bootstyle="info", command=lambda: sync_zoo_from_game()).pack(side=tk.LEFT, padx=4)
+ttk.Button(zoo_btns, text="Export Zoo", bootstyle="secondary", command=export_zoo_as_json).pack(side=tk.LEFT, padx=4)
+
+market_frame = ttk.Frame(trade_split, padding=8)
+trade_split.add(market_frame, weight=1)
+
+ttk.Label(market_frame, text="Trade Market", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+market_tree = ttk.Treeview(market_frame, columns=("zoo", "species", "name"), show="headings", height=18)
+market_tree.heading("zoo", text="Zoo")
+market_tree.heading("species", text="Species")
+market_tree.heading("name", text="Name")
+market_tree.pack(fill=tk.BOTH, expand=True)
+
+market_btns = ttk.Frame(market_frame)
+market_btns.pack(fill=tk.X, pady=(6, 0))
+ttk.Button(market_btns, text="Import Zoo", bootstyle="primary", command=import_zoo_json).pack(side=tk.LEFT, padx=4)
+
 def _selected_bundle_name():
     sel = bundle_list.curselection()
     if not sel:
@@ -1160,7 +1492,6 @@ def _selected_bundle_name():
 def refresh_bundles_list():
     """Reloads the bundle list from DB and reapplies current filter."""
     global _all_bundle_names_cache
-    # Fetch from DB
     cursor.execute("SELECT name FROM bundles ORDER BY name ASC")
     names = [r[0] for r in cursor.fetchall()]
     _all_bundle_names_cache = names[:]
@@ -1174,7 +1505,6 @@ def _apply_bundle_filter(*_):
     filtered = [n for n in _all_bundle_names_cache if query in n.lower()]
     if not filtered:
         bundle_list.insert(tk.END, "(No bundles yet)" if not _all_bundle_names_cache else "(No matches)")
-        # show empty preview
         bundle_name_lbl.config(text="(Select a bundle)")
         for i in preview_tree.get_children():
             preview_tree.delete(i)
@@ -1184,11 +1514,10 @@ def _apply_bundle_filter(*_):
     for n in filtered:
         bundle_list.insert(tk.END, n)
 
-
 def refresh_bundle_preview(event=None):
     """Populate right preview panel for current selection."""
     name = _selected_bundle_name()
-    if not name or name.startswith("("):  # don't act on empty-state rows
+    if not name or name.startswith("("):
         bundle_name_lbl.config(text="(Select a bundle)")
         for i in preview_tree.get_children():
             preview_tree.delete(i)
@@ -1196,11 +1525,9 @@ def refresh_bundle_preview(event=None):
         return
 
     bundle_name_lbl.config(text=name)
-    # Clear tree
     for i in preview_tree.get_children():
         preview_tree.delete(i)
 
-    # resolve to bundle id -> mods -> enabled status
     cursor.execute("SELECT id FROM bundles WHERE name=?", (name,))
     row = cursor.fetchone()
     if not row:
@@ -1225,7 +1552,6 @@ def refresh_bundle_preview(event=None):
 bundle_list.bind("<<ListboxSelect>>", refresh_bundle_preview)
 
 def _bundle_context_menu(event):
-    # select row under cursor
     idx = bundle_list.nearest(event.y)
     try:
         bundle_list.selection_clear(0, tk.END)
@@ -1293,7 +1619,7 @@ def bundle_apply():
         return
     apply_bundle(name, text_widget=log_text)
     refresh_bundle_preview()
-    refresh_tree()  # in case statuses changed
+    refresh_tree()
 
 def bundle_delete():
     name = _selected_bundle_name()
@@ -1311,8 +1637,6 @@ def bundle_export_json():
         messagebox.showinfo("Select", "Select a bundle first.")
         return
     export_bundle_as_json(name)
-    # no DB change; keep list same
-
 
 def bundle_import_json():
     import_bundle_from_json()
@@ -1348,6 +1672,21 @@ def bundle_disable_all():
     refresh_tree()
 
 refresh_bundles_list()
+
+def refresh_zoo_ui(profile):
+    zoo_name_lbl.config(text=profile.get("zoo_name", "(Unknown Zoo)"))
+
+    animal_tree.delete(*animal_tree.get_children())
+
+    for a in profile.get("animals", []):
+        animal_tree.insert("", "end", values=(a.get("species", "?"), a.get("name", "")))
+
+def refresh_market_ui(zoo):
+    for i in market_tree.get_children(): market_tree.delete(i)
+    for a in zoo.get("animals", []):
+        market_tree.insert("", "end", values=(zoo.get("zoo_name"), a["species"], a["name"]))
+
+refresh_zoo_ui(load_zoo_profile())
 
 log_frame = ttk.Frame(main_frame, padding=6)
 log_frame.pack(side=tk.RIGHT, fill=tk.Y)
@@ -1455,7 +1794,6 @@ def sort_tree_by(column):
 
     apply_tree_theme()
 
-    # Update header arrows
     for col in ("Name", "Status", "Size", "Modified"):
         arrow = ""
         if col == column:
@@ -1912,7 +2250,7 @@ def background_scan():
             root.after(0, hide_progress)
     threading.Thread(target=worker, daemon=True).start()
 
-# ---------------- Run the app ----------------
+# ---------------- Run ----------------
 if __name__ == '__main__':
 
     if not GAME_PATH:
@@ -1931,6 +2269,7 @@ if __name__ == '__main__':
     root.after(30000, auto_switch_theme)
     folder_tree.bind("<<TreeviewOpen>>", on_open_folder)
     folder_tree.bind("<<TreeviewSelect>>", on_select_folder)
+    refresh_market_ui_from_file()
 
 def on_close():
     try:
