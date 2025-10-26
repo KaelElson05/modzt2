@@ -34,7 +34,7 @@ Features of the mod manager include:
   pip install ttkbootstrap
 
 ### Run
-python main.py
+python modzt2.py
 
 ### Build
 pyinstaller --onefile --noconsole --icon=assets/icon.ico main.py
@@ -70,6 +70,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
