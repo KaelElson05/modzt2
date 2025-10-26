@@ -1,12 +1,73 @@
-ModZT2 is a modern, lightweight, and user-friendly Zoo Tycoon 2 mod manager designed to simplify installing, enabling, disabling, and organizing your mods — without the hassle of opening File Explorer.
+# ModZT2 - Mod Manager for Zoo Tycoon 2
 
-✅ One-Click Install
-✅ Enable / Disable / Uninstall
-✅ Auto-Detection
-✅ Load Order Export
-✅ Dark / Light Mode
-✅ Search & Filter
-✅ Context Menu
-✅ Batch Actions
-✅ Persistent Settings
-✅ Log Output
+**ModZT2** is a mod manager and launcher for *Zoo Tycoon 2*, built with **Python** and **ttkbootstrap**.  
+It features threaded background tasks, automatic path detection, persistent settings, and a database for mods and bundles.
+
+---
+
+Features of the mod manager include:
+  - Add, enable/disable, remove mods
+  - Track mod folders and load order
+  - Detect and resolve file conflicts
+
+  - Group mods into named bundles - Coming soon
+  - Export/import loadouts easily
+
+  - Auto-detect Zoo Tycoon 2 in common installation paths
+  - Persistent settings
+  - Theme and window size saved between sessions
+
+  - Threaded background tasks with progress bar
+  - Live action log and recent actions list - Coming soon
+  - Dark/light themes with one click - Alpha
+
+---
+
+## Building
+
+### Requirements
+- Python **3.10+**
+- Dependencies:
+  ```bash
+  pip install ttkbootstrap
+
+### Run
+python main.py
+
+### Build
+pyinstaller --onefile --noconsole --icon=assets/icon.ico main.py
+
+## Notice
+ModZT2 is an alpha program, but I run it with my game install with no problems. If you run into any bugs, please report them on Github Issues!
+
+ModZT2 is a third-party mod manager for Zoo Tycoon 2. This project is not affiliated with Microsoft, Xbox Game Studios, or Blue Fang Games.
+
+Created by Kael
+🐘 Built for Zoo Tycoon 2 fans.
+
+---
+
+## License
+
+```text
+MIT License
+
+Copyright (c) 2025 Kael
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
