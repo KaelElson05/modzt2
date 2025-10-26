@@ -1,3 +1,5 @@
+<img width="1396" height="649" alt="Screenshot 2025-10-26 090313" src="https://github.com/user-attachments/assets/5d51ef79-0c73-49e9-86d5-d11b478e9d28" />
+
 # ModZT2 - Mod Manager for Zoo Tycoon 2
 
 **ModZT2** is a mod manager and launcher for *Zoo Tycoon 2*, built with **Python** and **ttkbootstrap**.  
@@ -68,5 +70,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
