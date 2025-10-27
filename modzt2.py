@@ -729,41 +729,6 @@ def index_mod_files(cursor=None, conn=None, force=False):
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
 
-def detect_conflicts(cursor=None, conn=None, filemap=None):
-    """Detect overlapping internal files between mods (thread-safe)."""
-    if cursor is None or conn is None:
-        cursor = globals().get("cursor")
-        conn = globals().get("conn")
-
-    if filemap is None:
-        cache_path = os.path.join(CONFIG_DIR, "file_index.json")
-        if os.path.isfile(cache_path):
-            try:
-                with open(cache_path, "r", encoding="utf-8") as f:
-                    cache = json.load(f)
-                filemap = {k: v.get("files", []) for k, v in cache.items() if isinstance(v, dict)}
-            except Exception:
-                filemap = {}
-        else:
-            filemap = {}
-
-    file_to_mods = {}
-    for mod, files in filemap.items():
-        for f in files:
-            file_to_mods.setdefault(f, []).append(mod)
-
-    conflicts = {f: mods for f, mods in file_to_mods.items() if len(mods) > 1}
-
-    if conflicts:
-        text = "\n".join(f"{f}: {', '.join(v)}" for f, v in conflicts.items())
-        log(f"⚠️ Detected {len(conflicts)} conflicts:\n{text}", log_text)
-        messagebox.showwarning(
-            "Conflicting Mods Detected",
-            f"{len(conflicts)} conflicting files found.\n\nCheck the log for details."
-        )
-    else:
-        log("No conflicts detected.", log_text)
-
 def file_hash(path):
     """Return SHA1 hash of file content for duplicate detection."""
     h = hashlib.sha1()
@@ -1328,8 +1293,6 @@ mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
 mods_menu.add_command(label="Export Load Order", command=export_load_order)
 mods_menu.add_command(label="Backup Mods", command=lambda: run_with_progress(backup_mods, "Backing up mods"))
 mods_menu.add_command(label="Restore Mods", command=lambda: restore_mods)
-mods_menu.add_separator()
-mods_menu.add_command(label="Check Conflicts", command=lambda: (index_mod_files(), detect_conflicts()))
 mods_menu_btn["menu"] = mods_menu
 mods_menu_btn.pack(side=tk.LEFT, padx=4)
 
@@ -2422,14 +2385,13 @@ if not hasattr(root, "_watcher_started"):
 
 def background_scan():
     def worker():
-        root.after(0, lambda: show_progress("Scanning mods for duplicates and conflicts..."))
+        root.after(0, lambda: show_progress("Scanning mods for duplicates..."))
         try:
             local_conn = sqlite3.connect(DB_FILE)
             local_cursor = local_conn.cursor()
 
             detect_existing_mods(local_cursor, local_conn)
             index_mod_files(local_cursor, local_conn)
-            detect_conflicts(local_cursor, local_conn)
 
             local_conn.close()
         finally:
