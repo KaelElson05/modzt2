@@ -21,6 +21,8 @@ import zlib
 import io
 import sys
 import re
+import ctypes
+from ctypes import wintypes
 
 db_lock = threading.Lock()
 
@@ -452,6 +454,91 @@ def log(msg, text_widget=None):
         text_widget.configure(state="disabled")
         text_widget.see(tk.END)
 
+
+_dragdrop_targets = {}
+
+
+def enable_file_drop(widget, callback):
+    """Enable Windows shell drag-and-drop for the given widget."""
+    if platform.system() != "Windows":
+        return False
+
+    try:
+        user32 = ctypes.windll.user32
+        shell32 = ctypes.windll.shell32
+    except AttributeError:
+        return False
+
+    WM_DROPFILES = 0x0233
+    GWL_WNDPROC = -4
+
+    hwnd = widget.winfo_id()
+
+    if hwnd in _dragdrop_targets:
+        _dragdrop_targets[hwnd]["callback"] = callback
+        _dragdrop_targets[hwnd]["widget"] = widget
+        return True
+
+    DragAcceptFiles = shell32.DragAcceptFiles
+    DragQueryFile = shell32.DragQueryFileW
+    DragFinish = shell32.DragFinish
+
+    if hasattr(user32, "SetWindowLongPtrW"):
+        SetWindowLong = user32.SetWindowLongPtrW
+    else:
+        SetWindowLong = user32.SetWindowLongW
+
+    SetWindowLong.restype = ctypes.c_void_p
+    SetWindowLong.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+
+    CallWindowProc = user32.CallWindowProcW
+    CallWindowProc.restype = ctypes.c_long
+    CallWindowProc.argtypes = [ctypes.c_void_p, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+
+    DefWindowProc = user32.DefWindowProcW
+    DefWindowProc.restype = ctypes.c_long
+    DefWindowProc.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+
+    try:
+        DragAcceptFiles(hwnd, True)
+
+        WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_long, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+        def wnd_proc(h_wnd, msg, w_param, l_param):
+            info = _dragdrop_targets.get(h_wnd)
+            if info and msg == WM_DROPFILES:
+                count = DragQueryFile(w_param, 0xFFFFFFFF, None, 0)
+                files = []
+                for i in range(count):
+                    length = DragQueryFile(w_param, i, None, 0)
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    DragQueryFile(w_param, i, buffer, length + 1)
+                    files.append(buffer.value)
+                DragFinish(w_param)
+
+                widget_ref = info.get("widget")
+                cb = info.get("callback")
+                if widget_ref and cb:
+                    widget_ref.after(0, lambda paths=files: cb(paths))
+                return 0
+
+            if info and info.get("old_proc"):
+                return CallWindowProc(info["old_proc"], h_wnd, msg, w_param, l_param)
+            return DefWindowProc(h_wnd, msg, w_param, l_param)
+
+        proc = WNDPROC(wnd_proc)
+        old_proc = SetWindowLong(hwnd, GWL_WNDPROC, proc)
+
+        _dragdrop_targets[hwnd] = {
+            "callback": callback,
+            "old_proc": ctypes.c_void_p(old_proc),
+            "proc": proc,
+            "widget": widget,
+        }
+        return True
+    except Exception:
+        return False
+
 def save_game_path(p):
     with open(GAME_PATH_FILE, "w", encoding="utf-8") as f:
         f.write(p)
@@ -750,31 +837,71 @@ def detect_existing_mods(cursor=None, conn=None):
     except sqlite3.OperationalError:
         pass
 
-def install_mod(text_widget=None):
+def install_mod(file_paths=None, text_widget=None):
     if not GAME_PATH:
         messagebox.showerror("Error", "Set game path first!")
-        return
-    file_path = filedialog.askopenfilename(title="Select a .z2f Mod File", filetypes=[("ZT2 Mod", "*.z2f;*.zip"), ("All Files", "*.*")])
-    if not file_path:
-        return
-    mod_name = os.path.basename(file_path)
+        return []
+
+    interactive = file_paths is None
+
+    if interactive:
+        chosen = filedialog.askopenfilenames(
+            title="Select Mod Files",
+            filetypes=[("ZT2 Mod", "*.z2f;*.zip"), ("All Files", "*.*")],
+        )
+        if not chosen:
+            return []
+        file_paths = list(chosen)
+
+    valid_paths = []
+    for path in file_paths or []:
+        if not os.path.isfile(path):
+            continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext in {".z2f", ".zip"}:
+            valid_paths.append(path)
+
+    if not valid_paths:
+        msg = "No .z2f or .zip files were provided."
+        if interactive:
+            messagebox.showwarning("No Mod Files", msg)
+        else:
+            log(msg, text_widget)
+        return []
+
     dest_dir = mods_disabled_dir()
     os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, mod_name)
-    try:
-        shutil.copy2(file_path, dest)
-        log(f"Installed mod: {mod_name} -> {dest}", text_widget)
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to install: {e}")
-        return
-    cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, 0)", (mod_name,))
+
+    installed_mods = []
+    for file_path in valid_paths:
+        mod_name = os.path.basename(file_path)
+        dest = os.path.join(dest_dir, mod_name)
+        try:
+            shutil.copy2(file_path, dest)
+            log(f"Installed mod: {mod_name} -> {dest}", text_widget)
+            installed_mods.append(mod_name)
+        except Exception as e:
+            error_msg = f"Failed to install {mod_name}: {e}"
+            log(error_msg, text_widget)
+            if interactive:
+                messagebox.showerror("Error", error_msg)
+            continue
+
+        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, 0)", (mod_name,))
+        else:
+            cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
+
+    if installed_mods:
+        conn.commit()
+        detect_existing_mods()
+        refresh_tree()
+        update_status()
     else:
-        cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
-    conn.commit()
-    refresh_tree()
-    update_status()
+        conn.commit()
+
+    return installed_mods
 
 def enable_mod(mod_name, text_widget=None):
     deps = get_dependencies(mod_name)
@@ -1348,7 +1475,12 @@ mods_tree.bind("<Button-3>", on_mod_right_click)
 mod_btns = ttk.Frame(mods_tab, padding=6)
 mod_btns.pack(fill=tk.X)
 
-install_btn = ttk.Button(mod_btns, text="Install Mod", command=lambda: (install_mod(text_widget=log_text), detect_existing_mods(), refresh_tree()), bootstyle="success")
+install_btn = ttk.Button(
+    mod_btns,
+    text="Install Mod",
+    command=lambda: install_mod(text_widget=log_text),
+    bootstyle="success",
+)
 install_btn.pack(side=tk.LEFT, padx=4)
 enable_btn = ttk.Button(mod_btns, text="Enable", command=lambda: (enable_selected_mod(),), bootstyle="info")
 enable_btn.pack(side=tk.LEFT, padx=4)
@@ -1358,6 +1490,60 @@ uninstall_btn = ttk.Button(mod_btns, text="Uninstall", command=lambda: (uninstal
 uninstall_btn.pack(side=tk.LEFT, padx=4)
 refresh_btn = ttk.Button(mod_btns, text="Refresh List", command=lambda: (detect_existing_mods(), refresh_tree()))
 refresh_btn.pack(side=tk.LEFT, padx=4)
+
+drop_zone_default = "Drag and drop .z2f/.zip files here to install"
+drop_zone = ttk.Label(
+    mods_tab,
+    text=drop_zone_default,
+    anchor="center",
+    padding=12,
+    relief="ridge",
+    bootstyle="secondary",
+)
+drop_zone.pack(fill=tk.X, padx=12, pady=(4, 8))
+
+_drop_base_style = {"style": "secondary"}
+
+
+def _reset_drop_zone():
+    drop_zone.configure(text=drop_zone_default, bootstyle=_drop_base_style["style"])
+
+
+def _handle_file_drop(paths):
+    installed = install_mod(file_paths=paths, text_widget=log_text)
+    if installed:
+        plural = "s" if len(installed) != 1 else ""
+        drop_zone.configure(
+            text=f"Installed {len(installed)} mod file{plural}!",
+            bootstyle="success",
+        )
+    else:
+        drop_zone.configure(
+            text="No valid mod files detected.",
+            bootstyle="warning",
+        )
+    drop_zone.after(2500, _reset_drop_zone)
+
+
+def _on_drop_enter(_event):
+    drop_zone.configure(bootstyle="primary")
+
+
+def _on_drop_leave(_event):
+    drop_zone.configure(bootstyle=_drop_base_style["style"])
+
+
+drop_zone.bind("<Enter>", _on_drop_enter)
+drop_zone.bind("<Leave>", _on_drop_leave)
+
+if enable_file_drop(drop_zone, _handle_file_drop):
+    _drop_base_style["style"] = "info"
+    drop_zone.configure(bootstyle=_drop_base_style["style"])
+else:
+    drop_zone.configure(
+        text=f"{drop_zone_default}\n(Drag-and-drop available on Windows only)",
+        bootstyle="secondary",
+    )
 
 bundles_tab = ttk.Frame(notebook, padding=6)
 notebook.add(bundles_tab, text="Bundles")
