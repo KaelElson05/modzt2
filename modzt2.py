@@ -961,43 +961,63 @@ def export_load_order():
 
 # ---------------- Watcher ----------------
 def watch_mods(root, refresh_func, interval=5):
-    def worker():
-        last_snapshot = set()
-        while True:
+    """Poll the filesystem for mod changes using Tk's event loop."""
+
+    delay_ms = max(100, int(interval * 1000)) if interval else 100
+    last_snapshot = set()
+
+    def scan_mods():
+        found = set()
+        disabled_dir = mods_disabled_dir() if GAME_PATH else None
+        for folder, enabled_flag in (
+            (GAME_PATH, 1),
+            (disabled_dir, 0),
+        ):
+            if not folder or not os.path.isdir(folder):
+                continue
             try:
-                if not GAME_PATH or not os.path.isdir(GAME_PATH):
-                    time.sleep(interval)
-                    continue
-                found = set()
-                ... 
-            except Exception as e:
-                print("Watcher error:", e)
-                time.sleep(interval)
+                entries = os.listdir(folder)
+            except OSError as exc:
+                print("Watcher error:", exc)
+                continue
+            for entry in entries:
+                lower = entry.lower()
+                if lower.endswith(".z2f") or lower.endswith(".zip"):
+                    found.add((entry, enabled_flag))
+        return found
 
-            found = set()
-            disabled = mods_disabled_dir()
-            for folder in [GAME_PATH, disabled]:
-                if os.path.isdir(folder):
-                    for f in os.listdir(folder):
-                        if f.lower().endswith('.z2f') or f.lower().endswith('.zip'):
-                            found.add((f, 1 if folder == GAME_PATH else 0))
-            if found != last_snapshot:
-                def update_db_and_refresh():
-                    for mod_name, enabled in found:
-                        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
-                        if cursor.fetchone()[0] == 0:
-                            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod_name, enabled))
-                        else:
-                            cursor.execute("UPDATE mods SET enabled=? WHERE name=?", (enabled, mod_name))
-                    conn.commit()
-                    refresh_func()
-                    update_status()
+    def poll():
+        nonlocal last_snapshot
+        try:
+            found = scan_mods()
+        except Exception as exc:  # defensive: never break the poll loop
+            print("Watcher error:", exc)
+            root.after(delay_ms, poll)
+            return
 
-                    refresh_tree()
-                root.after(0, update_db_and_refresh)
-                last_snapshot = found
-            time.sleep(interval)
-    threading.Thread(target=worker, daemon=True).start()
+        if found != last_snapshot:
+            mods_in_snapshot = {name for name, _ in found}
+            cursor.execute("SELECT name FROM mods")
+            existing_names = {row[0] for row in cursor.fetchall()}
+
+            for mod_name, enabled in found:
+                if mod_name in existing_names:
+                    cursor.execute("UPDATE mods SET enabled=? WHERE name=?", (enabled, mod_name))
+                else:
+                    cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod_name, enabled))
+
+            removed = existing_names - mods_in_snapshot
+            for missing in removed:
+                cursor.execute("DELETE FROM mods WHERE name=?", (missing,))
+
+            conn.commit()
+            refresh_func()
+            update_status()
+            last_snapshot = found
+
+        root.after(delay_ms, poll)
+
+    root.after(0, poll)
 
 # ---------------- Bundles ----------------
 def create_bundle(bundle_name, mod_list):
