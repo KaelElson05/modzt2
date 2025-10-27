@@ -584,13 +584,44 @@ def find_mod_file(mod_name):
         return p2
     return None
 
+def _normalise_mod_path(path):
+    """Return a consistent representation for paths inside mod archives."""
+    if not path:
+        return None
+    path = path.replace("\\", "/")
+    path = path.lstrip("/")
+    if not path or path.endswith("/"):
+        return None
+    return path.lower()
+
+
+def _list_mod_files(full_path):
+    """List all file entries inside a mod archive for conflict detection."""
+    try:
+        with zipfile.ZipFile(full_path, "r") as zf:
+            files = []
+            for name in zf.namelist():
+                normalised = _normalise_mod_path(name)
+                if normalised:
+                    files.append(normalised)
+            # Remove duplicates while preserving a stable order for comparison/logging
+            return sorted(set(files))
+    except zipfile.BadZipFile:
+        log_widget = globals().get("log_text")
+        log(f"Failed to index '{os.path.basename(full_path)}' (invalid zip).", text_widget=log_widget)
+    except Exception as exc:
+        log_widget = globals().get("log_text")
+        log(f"Failed to index '{os.path.basename(full_path)}': {exc}", text_widget=log_widget)
+    return []
+
+
 def index_mod_files(cursor=None, conn=None, force=False):
     if cursor is None or conn is None:
         cursor = globals().get("cursor")
         conn = globals().get("conn")
 
     if not GAME_PATH:
-        return
+        return {}
 
     cache_file = os.path.join(CONFIG_DIR, "file_index.json")
     cache = {}
@@ -602,6 +633,8 @@ def index_mod_files(cursor=None, conn=None, force=False):
             cache = {}
 
     changed = False
+    indexed_mods = set()
+
     for folder in [GAME_PATH, mods_disabled_dir()]:
         if not os.path.isdir(folder):
             continue
@@ -616,7 +649,9 @@ def index_mod_files(cursor=None, conn=None, force=False):
             except OSError:
                 continue
 
-            if not force and f in cache and cache[f].get("_mtime") == mtime:
+            entry = cache.get(f)
+            if not force and entry and entry.get("_mtime") == mtime and "files" in entry:
+                indexed_mods.add(f)
                 continue
 
             import hashlib
@@ -632,15 +667,35 @@ def index_mod_files(cursor=None, conn=None, force=False):
             except Exception:
                 mod_hash = None
 
-            cache[f] = {"_mtime": mtime, "hash": mod_hash}
-            changed = True
+            files = _list_mod_files(full_path)
 
-            if mod_hash:
-                cursor.execute("UPDATE mods SET hash=? WHERE name=?", (mod_hash, f))
+            new_entry = {
+                "_mtime": mtime,
+                "hash": mod_hash,
+                "files": files,
+            }
+
+            if entry != new_entry:
+                cache[f] = new_entry
+                changed = True
+                if mod_hash:
+                    cursor.execute("UPDATE mods SET hash=? WHERE name=?", (mod_hash, f))
+
+            indexed_mods.add(f)
+
+    # Remove cache entries for mods that no longer exist on disk
+    stale = set(cache.keys()) - indexed_mods
+    if stale:
+        for mod_name in stale:
+            cache.pop(mod_name, None)
+        changed = True
+
     if changed:
         conn.commit()
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
+
+    return {mod: data.get("files", []) for mod, data in cache.items()}
 
 def detect_conflicts(cursor=None, conn=None, filemap=None):
     """Detect overlapping internal files between mods (thread-safe)."""
@@ -660,22 +715,36 @@ def detect_conflicts(cursor=None, conn=None, filemap=None):
         else:
             filemap = {}
 
+    if not filemap:
+        log("No indexed mod files available for conflict detection.", globals().get("log_text"))
+        return {}
+
     file_to_mods = {}
     for mod, files in filemap.items():
         for f in files:
-            file_to_mods.setdefault(f, []).append(mod)
+            file_to_mods.setdefault(f, set()).add(mod)
 
-    conflicts = {f: mods for f, mods in file_to_mods.items() if len(mods) > 1}
+    conflicts = {f: sorted(mods) for f, mods in file_to_mods.items() if len(mods) > 1}
+
+    log_widget = globals().get("log_text")
 
     if conflicts:
-        text = "\n".join(f"{f}: {', '.join(v)}" for f, v in conflicts.items())
-        log(f"⚠️ Detected {len(conflicts)} conflicts:\n{text}", log_text)
+        sorted_conflicts = sorted(conflicts.items())
+        lines = [f"{path}: {', '.join(mods)}" for path, mods in sorted_conflicts]
+        preview = "\n".join(lines[:100])
+        extra = "" if len(lines) <= 100 else f"\n...and {len(lines) - 100} more entries."
+        log(
+            f"⚠️ Detected {len(conflicts)} conflicting files:\n{preview}{extra}",
+            text_widget=log_widget,
+        )
         messagebox.showwarning(
             "Conflicting Mods Detected",
-            f"{len(conflicts)} conflicting files found.\n\nCheck the log for details."
+            f"{len(conflicts)} conflicting files found.\n\nCheck the log for details.",
         )
     else:
-        log("No conflicts detected.", log_text)
+        log("No conflicts detected.", text_widget=log_widget)
+
+    return conflicts
 
 def file_hash(path):
     """Return SHA1 hash of file content for duplicate detection."""
@@ -1202,7 +1271,10 @@ mods_menu.add_command(label="Export Load Order", command=export_load_order)
 mods_menu.add_command(label="Backup Mods", command=lambda: run_with_progress(backup_mods, "Backing up mods"))
 mods_menu.add_command(label="Restore Mods", command=lambda: restore_mods)
 mods_menu.add_separator()
-mods_menu.add_command(label="Check Conflicts", command=lambda: (index_mod_files(), detect_conflicts()))
+mods_menu.add_command(
+    label="Check Conflicts",
+    command=lambda: detect_conflicts(filemap=index_mod_files()),
+)
 mods_menu_btn["menu"] = mods_menu
 mods_menu_btn.pack(side=tk.LEFT, padx=4)
 
@@ -2242,8 +2314,8 @@ def background_scan():
             local_cursor = local_conn.cursor()
 
             detect_existing_mods(local_cursor, local_conn)
-            index_mod_files(local_cursor, local_conn)
-            detect_conflicts(local_cursor, local_conn)
+            filemap = index_mod_files(local_cursor, local_conn)
+            detect_conflicts(local_cursor, local_conn, filemap=filemap)
 
             local_conn.close()
         finally:
