@@ -30,6 +30,7 @@ if os.name == "nt":
     GWL_WNDPROC = -4
 
     LONG_PTR = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_longlong) else ctypes.c_long
+    LRESULT = LONG_PTR
 
     DragAcceptFiles = ctypes.windll.shell32.DragAcceptFiles
     DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
@@ -49,13 +50,13 @@ if os.name == "nt":
 
     CallWindowProc = ctypes.windll.user32.CallWindowProcW
     CallWindowProc.argtypes = [LONG_PTR, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-    CallWindowProc.restype = wintypes.LRESULT
+    CallWindowProc.restype = LRESULT
 
     DefWindowProc = ctypes.windll.user32.DefWindowProcW
     DefWindowProc.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-    DefWindowProc.restype = wintypes.LRESULT
+    DefWindowProc.restype = LRESULT
 
-    WNDPROC = ctypes.WINFUNCTYPE(wintypes.LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+    WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 
     _drop_handlers = {}
     _prev_wnd_procs = {}
