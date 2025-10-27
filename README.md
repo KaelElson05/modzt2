@@ -46,6 +46,8 @@ This project is not affiliated with Microsoft, Xbox Game Studios, or Blue Fang G
 
 ---
 
+![Downloads](https://img.shields.io/github/downloads/kaelelson05/modzt2/total?color=brightgreen&label=downloads)
+
 ## License
 
 ```text
@@ -70,6 +72,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
