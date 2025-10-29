@@ -1,4 +1,5 @@
-<img width="1396" height="649" alt="Screenshot 2025-10-26 090313" src="https://github.com/user-attachments/assets/5d51ef79-0c73-49e9-86d5-d11b478e9d28" />
+<img width="1392" height="896" alt="image" src="https://github.com/user-attachments/assets/ffa346da-9465-486d-be0a-67fae2758d8d" />
+
 
 # ModZT2 - Mod Manager for Zoo Tycoon and Zoo Tycoon 2
 ![GitHub all releases](https://img.shields.io/github/downloads/kaelelson05/modzt2/total.svg)
@@ -71,6 +72,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
