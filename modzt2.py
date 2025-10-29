@@ -25,13 +25,13 @@ import re
 db_lock = threading.Lock()
 
 # ---------------- Constants ----------------
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 SETTINGS_FILE = "settings.json"
-ZOO_PROFILE = os.path.join("data", "my_zoo.json")
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 GAME_PATH_FILE = os.path.join(CONFIG_DIR, "game_path.txt")
+ZT1_PATH_FILE = os.path.join(CONFIG_DIR, "game_path_zt1.txt")
 DB_FILE = os.path.join(CONFIG_DIR, "mods.db")
 ICON_FILE = os.path.join(CONFIG_DIR, "modzt2.ico")
 BANNER_FILE = os.path.join(CONFIG_DIR, "banner.png")
@@ -39,14 +39,25 @@ FILEMAP_CACHE = os.path.join(CONFIG_DIR, "mod_filemap.json")
 
 # ---------------- Global State ----------------
 GAME_PATH = None
+ZT1_PATH = None
+
 if os.path.isfile(GAME_PATH_FILE):
     with open(GAME_PATH_FILE, "r", encoding="utf-8") as f:
         GAME_PATH = f.read().strip()
 
-# --- Auto-detect common Zoo Tycoon 2 installation paths ---
+if os.path.isfile(ZT1_PATH_FILE):
+    with open(ZT1_PATH_FILE, "r", encoding="utf-8") as f:
+        ZT1_PATH = f.read().strip()
+
+# --- Auto-detect common game installation paths ---
 COMMON_ZT2_PATHS = [
     r"C:\Program Files (x86)\Microsoft Games\Zoo Tycoon 2",
     r"C:\Program Files\Microsoft Games\Zoo Tycoon 2",
+]
+
+COMMON_ZT1_PATHS = [
+    r"C:\Program Files (x86)\Microsoft Games\Zoo Tycoon",
+    r"C:\Program Files\Microsoft Games\Zoo Tycoon",
 ]
 
 DEFAULT_SETTINGS = {
@@ -88,282 +99,40 @@ def save_settings(settings):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=4)
 
-def extract_animals_from_z2s(path):
-    """Extract species names from ZT2 world.zt2 task entries like 'Deinonychus:GroomSelf'."""
-    with zipfile.ZipFile(path, "r") as z:
-        world_path = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
-        if not world_path:
-            print("No world.zt2 found.")
-            return []
+def auto_detect_zt1_installation():
+    import winreg
 
-        raw = z.read(world_path)
-    try:
-        data = zlib.decompress(raw)
-    except zlib.error:
+    for path in COMMON_ZT1_PATHS:
+        exe = os.path.join(path, "zoo.exe")
+        if os.path.isfile(exe):
+            return path
+
+    possible_keys = [
+        r"SOFTWARE\Microsoft\Microsoft Games\Zoo Tycoon ",
+        r"SOFTWARE\WOW6432Node\Microsoft\Microsoft Games\Zoo Tycoon",
+    ]
+    for key in possible_keys:
         try:
-            data = zlib.decompress(raw[4:])
-        except zlib.error:
-            data = raw
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as regkey:
+                install_dir, _ = winreg.QueryValueEx(regkey, "InstallationDirectory")
+                exe = os.path.join(install_dir, "zoo.exe")
+                if os.path.isfile(exe):
+                    return install_dir
+        except FileNotFoundError:
+            continue
+        except Exception:
+            pass
 
-    text = data.decode("utf-8", errors="ignore")
+    user_dirs = [
+        os.path.join(os.path.expanduser("~"), "Desktop"),
+        os.path.join(os.path.expanduser("~"), "Documents"),
+    ]
+    for base in user_dirs:
+        for root, dirs, files in os.walk(base):
+            if "zoo.exe" in files:
+                return root
 
-    species = re.findall(r'templateID="([A-Za-z0-9_]+):', text)
-
-    ignore = {"staff","educator","guest","guestemotes","restaurant","bathroom",
-              "amusement","worker","viewanimal","binoculars","terrain",
-              "metaltrough_water","adultguestinteractions","smallrockcave_shelter",
-              "seating","viewanimal_cp2","dinoRecoveryBuilding"}
-    animals = [s for s in species if s.lower() not in ignore and len(s) > 2]
-
-    counts = Counter(animals)
-    print(f"Detected {len(counts)} species ({sum(counts.values())} total tasks).")
-    for sp, c in counts.most_common():
-        print(f" - {sp}: {c} task refs")
-    
-    return [{"species": sp, "name": ""} for sp in counts.keys()]
-
-def extract_animals(file_path):
-    """Detect animal entities (animal:/dino:/marine:/bird:) from a ZT2 .z2s save."""
-    with zipfile.ZipFile(file_path, "r") as z:
-        world_path = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
-        if not world_path:
-            print("No world.zt2 found.")
-            return []
-
-        with z.open(world_path) as f:
-            raw = f.read()
-
-        try:
-            data = zlib.decompress(raw)
-        except zlib.error:
-            try:
-                data = zlib.decompress(raw[4:])
-            except zlib.error:
-                data = raw
-
-        text = data.decode("utf-8", errors="ignore")
-
-        pattern = re.compile(
-            r'templateID="(?:animal|dino|marine|bird):([A-Za-z0-9_]+)"',
-            re.IGNORECASE
-        )
-        matches = pattern.findall(text)
-
-        if not matches:
-            pattern2 = re.compile(
-                r'subType="(?:[A-Za-z0-9_]*)(Adult|Young)_[MF]_[0-9]*"',
-                re.IGNORECASE
-            )
-            matches = pattern2.findall(text)
-
-        unique = sorted(set(matches))
-        print(f"Detected {len(unique)} animal templates in {file_path}")
-        for u in unique:
-            print(" -", u)
-        return unique
-
-def list_all_templateids(file_path):
-    """List every distinct templateID string in world.zt2"""
-    with zipfile.ZipFile(file_path, "r") as z:
-        world = next((n for n in z.namelist() if n.lower().endswith("saved/world.zt2")), None)
-        if not world:
-            print("No world.zt2 found.")
-            return
-        raw = z.read(world)
-    try:
-        data = zlib.decompress(raw)
-    except zlib.error:
-        try:
-            data = zlib.decompress(raw[4:])
-        except zlib.error:
-            data = raw
-
-    txt = data.decode("utf-8", errors="ignore")
-
-    ids = re.findall(r'templateID="([^"]+)"', txt)
-    uniq = sorted(set(ids))
-    print(f"Found {len(uniq)} distinct templateIDs.")
-    for u in uniq[:200]:
-        print(u)
-    if len(uniq) > 200:
-        print("… (truncated)")
-    return uniq
-
-def species_name(species_id):
-    """Converts internal Zoo Tycoon 2 species IDs into readable names."""
-    if not species_id:
-        return "Unknown"
-    if species_id.lower().startswith("animal"):
-        species_id = species_id[6:]
-    return species_id.replace("_", " ").title()
-
-def load_zoo_profile():
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(ZOO_PROFILE):
-        profile = {"zoo_name": "My Zoo", "zookeeper": os.getenv("USERNAME", "Player"), 
-                   "animals": [], "trade_history": []}
-        save_zoo_profile(profile)
-        return profile
-    with open(ZOO_PROFILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-    
-def save_zoo_profile(data):
-    os.makedirs("data", exist_ok=True)
-    with open(ZOO_PROFILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-def sync_zoo_from_game(game_path=None):
-    profile = load_zoo_profile()
-    species_list = extract_animals_from_z2s(profile)
-    profile["animals"] = species_list
-    save_zoo_profile(profile)
-    all_animals = []
-
-    if not game_path:
-        game_path = settings.get("game_path", "")
-    z2f_dir = os.path.join(game_path, "dlupdates")
-    if os.path.isdir(z2f_dir):
-        for file in os.listdir(z2f_dir):
-            if file.endswith(".z2f"):
-                try:
-                    with zipfile.ZipFile(os.path.join(z2f_dir, file), "r") as z:
-                        for n in z.namelist():
-                            if "animal" in n.lower() and n.lower().endswith(".xml"):
-                                with z.open(n) as f:
-                                    try:
-                                        tree = ET.parse(f)
-                                        root = tree.getroot()
-                                        name = root.findtext("name", default=file.replace(".z2f", ""))
-                                        all_animals.append({"species": name, "name": name})
-                                    except Exception:
-                                        pass
-                except Exception:
-                    pass
-
-    saves_dir = os.path.join(game_path, "Saved Games")
-    if os.path.isdir(saves_dir):
-        for file in os.listdir(saves_dir):
-            if file.endswith(".z2s"):
-                try:
-                    with zipfile.ZipFile(os.path.join(saves_dir, file), "r") as z:
-                        for n in z.namelist():
-                            if n.lower().endswith(".xml"):
-                                with z.open(n) as f:
-                                    xml = ET.parse(f)
-                                    for a in xml.findall(".//Animal"):
-                                        species = a.get("Species", "Unknown")
-                                        name = a.get("Name", "Unnamed")
-                                        all_animals.append({"species": species, "name": name})
-                except Exception:
-                    pass
-
-    unique_animals = {f"{a['species']}|{a['name']}": a for a in all_animals}.values()
-    profile = load_zoo_profile()
-    profile["animals"] = detect_animals_from_latest_save()
-    save_zoo_profile(profile)
-    refresh_zoo_ui(profile)
-    add_zoo_to_market(profile)
-    refresh_market_ui_from_file()
-    messagebox.showinfo(
-        "Zoo Synced",
-        f"Detected {len(profile['animals'])} animals from your latest saved zoo."
-    )
-
-def add_zoo_to_market(profile):
-    """Save the current zoo to the persistent market list."""
-    if not profile or "zoo_name" not in profile:
-        return
-
-    market_data_path = os.path.join("data", "market.json")
-    os.makedirs("data", exist_ok=True)
-
-    if os.path.exists(market_data_path):
-        with open(market_data_path, "r", encoding="utf-8") as f:
-            market = json.load(f)
-    else:
-        market = []
-
-    existing = next((z for z in market if z.get("zoo_name") == profile["zoo_name"]), None)
-    if existing:
-        existing.update(profile)
-    else:
-        market.append(profile)
-
-    with open(market_data_path, "w", encoding="utf-8") as f:
-        json.dump(market, f, indent=2)
-
-def get_zt2_save_dir():
-    """Returns the Zoo Tycoon 2 save directory."""
-    base = os.path.join(os.getenv("APPDATA"), "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "Saved")
-    if os.path.isdir(base):
-        return base
-    alt = os.path.join(os.getenv("USERPROFILE"), "Documents", "Zoo Tycoon 2", "Saved Games")
-    return alt if os.path.isdir(alt) else None
-
-def detect_animals_from_latest_save():
-    saves_dir = get_zt2_save_dir()
-    if not saves_dir:
-        messagebox.showwarning("Zoo Sync", "Could not find the Zoo Tycoon 2 save folder.")
-        return []
-
-    zoo_files = [os.path.join(saves_dir, f) for f in os.listdir(saves_dir) if f.lower().endswith(".z2s")]
-    if not zoo_files:
-        messagebox.showinfo("Zoo Sync", "No .z2s zoo save files found.")
-        return []
-
-    latest = max(zoo_files, key=os.path.getmtime)
-    print(f"Syncing from: {os.path.basename(latest)}")
-    return extract_animals_from_z2s(latest)
-
-def export_zoo_as_json():
-    profile = load_zoo_profile()
-    os.makedirs("data/trades", exist_ok=True)
-    dest = os.path.join("data", "trades", f"{profile['zoo_name'].replace(' ', '_')}.z2s.json")
-    with open(dest, "w", encoding="utf-8") as f:
-        json.dump(profile, f, indent=2)
-    messagebox.showinfo("Exported", f"Your zoo was exported to:\n{dest}")
-
-def import_zoo_json():
-    file = filedialog.askopenfilename(title="Import Zoo", filetypes=[("Zoo JSON", "*.z2s.json")])
-    if not file:
-        return
-
-    with open(file, "r", encoding="utf-8") as f:
-        other = json.load(f)
-
-    market_data_path = os.path.join("data", "market.json")
-    if os.path.exists(market_data_path):
-        with open(market_data_path, "r", encoding="utf-8") as mf:
-            market = json.load(mf)
-    else:
-        market = []
-
-    existing = next((z for z in market if z.get("zoo_name") == other.get("zoo_name")), None)
-    if existing:
-        existing.update(other)
-    else:
-        market.append(other)
-
-    with open(market_data_path, "w", encoding="utf-8") as mf:
-        json.dump(market, mf, indent=2)
-
-    refresh_market_ui_from_file()
-    messagebox.showinfo("Imported", f"Imported zoo: {other.get('zoo_name')}")
-
-def refresh_market_ui_from_file():
-    """Reload the entire market table from market.json."""
-    market_data_path = os.path.join("data", "market.json")
-    if not os.path.exists(market_data_path):
-        return
-
-    with open(market_data_path, "r", encoding="utf-8") as f:
-        market = json.load(f)
-
-    market_tree.delete(*market_tree.get_children())
-
-    for zoo in market:
-        for a in zoo.get("animals", []):
-            market_tree.insert("", "end", values=(zoo.get("zoo_name"), a.get("species", "?"), a.get("name", "")))
+    return None
 
 def auto_detect_zt2_installation():
     import winreg
@@ -477,16 +246,6 @@ def get_game_path():
 def enabled_count():
     cursor.execute("SELECT COUNT(*) FROM mods WHERE enabled=1")
     return cursor.fetchone()[0]
-
-def show_progress(text="Scanning mods..."):
-    status_label.config(text=text)
-    progress_bar.pack(side=tk.RIGHT, padx=6)
-    progress_bar.start(10)
-
-def hide_progress():
-    progress_bar.stop()
-    progress_bar.pack_forget()
-    update_status()
 
 def set_dependencies(mod_name, dependencies):
     """Store dependency links in the DB."""
@@ -642,41 +401,6 @@ def index_mod_files(cursor=None, conn=None, force=False):
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
 
-def detect_conflicts(cursor=None, conn=None, filemap=None):
-    """Detect overlapping internal files between mods (thread-safe)."""
-    if cursor is None or conn is None:
-        cursor = globals().get("cursor")
-        conn = globals().get("conn")
-
-    if filemap is None:
-        cache_path = os.path.join(CONFIG_DIR, "file_index.json")
-        if os.path.isfile(cache_path):
-            try:
-                with open(cache_path, "r", encoding="utf-8") as f:
-                    cache = json.load(f)
-                filemap = {k: v.get("files", []) for k, v in cache.items() if isinstance(v, dict)}
-            except Exception:
-                filemap = {}
-        else:
-            filemap = {}
-
-    file_to_mods = {}
-    for mod, files in filemap.items():
-        for f in files:
-            file_to_mods.setdefault(f, []).append(mod)
-
-    conflicts = {f: mods for f, mods in file_to_mods.items() if len(mods) > 1}
-
-    if conflicts:
-        text = "\n".join(f"{f}: {', '.join(v)}" for f, v in conflicts.items())
-        log(f"⚠️ Detected {len(conflicts)} conflicts:\n{text}", log_text)
-        messagebox.showwarning(
-            "Conflicting Mods Detected",
-            f"{len(conflicts)} conflicting files found.\n\nCheck the log for details."
-        )
-    else:
-        log("No conflicts detected.", log_text)
-
 def file_hash(path):
     """Return SHA1 hash of file content for duplicate detection."""
     h = hashlib.sha1()
@@ -731,7 +455,6 @@ def detect_existing_mods(cursor=None, conn=None):
             cursor.execute("DELETE FROM mods WHERE name=?", (name,))
     conn.commit()
 
-    # --- Duplicate detection ---
     try:
         cursor.execute("""
             SELECT hash, GROUP_CONCAT(name, ', ') AS mods, COUNT(*) AS c
@@ -776,6 +499,51 @@ def install_mod(text_widget=None):
     refresh_tree()
     update_status()
 
+def install_mod_from_path(file_path, text_widget=None):
+    if not GAME_PATH:
+        messagebox.showerror("Error", "Set game path first!")
+        return
+
+    if not file_path or not os.path.isfile(file_path):
+        messagebox.showerror("Error", f"File not found:\n{file_path}")
+        return
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in (".z2f", ".zip"):
+        messagebox.showerror("Unsupported", f"Only .z2f or .zip mods are supported here.\nGot: {ext}")
+        return
+
+    mod_name = os.path.basename(file_path)
+    dest_dir = mods_disabled_dir()
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, mod_name)
+
+    try:
+        shutil.copy2(file_path, dest)
+        log(f"Installed (DnD) mod: {mod_name} -> {dest}", text_widget)
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to install: {e}")
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, 0)", (mod_name,))
+    else:
+        cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
+    conn.commit()
+
+    # Optional: update hashes if you use duplicate detection
+    try:
+        h = file_hash(dest)
+        if h:
+            cursor.execute("UPDATE mods SET hash=? WHERE name=?", (h, mod_name))
+            conn.commit()
+    except Exception:
+        pass
+
+    refresh_tree()
+    update_status()
+
 def enable_mod(mod_name, text_widget=None):
     deps = get_dependencies(mod_name)
     for dep in deps:
@@ -802,8 +570,16 @@ def enable_mod(mod_name, text_widget=None):
             return
     cursor.execute("UPDATE mods SET enabled=1 WHERE name=?", (mod_name,))
     conn.commit()
-    refresh_tree()
+
+    for iid in mods_tree.get_children():
+        vals = mods_tree.item(iid, "values")
+        if vals and vals[0] == mod_name:
+            mods_tree.item(iid, values=(vals[0], "Enabled", vals[2], vals[3]))
+            mods_tree.item(iid, tags=("enabled",))
+            break
+
     update_status()
+    log(f"Enabled mod: {mod_name}", text_widget)
 
 def disable_mod(mod_name, text_widget=None):
     dependents = get_dependents(mod_name)
@@ -831,8 +607,16 @@ def disable_mod(mod_name, text_widget=None):
         messagebox.showwarning("Not found", f"Mod file for {mod_name} not found in enabled folder.")
     cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
     conn.commit()
-    refresh_tree()
+
+    for iid in mods_tree.get_children():
+        vals = mods_tree.item(iid, "values")
+        if vals and vals[0] == mod_name:
+            mods_tree.item(iid, values=(vals[0], "Disabled", vals[2], vals[3]))
+            mods_tree.item(iid, tags=("disabled",))
+            break
+
     update_status()
+    log(f"Disabled mod: {mod_name}", text_widget)
 
 def uninstall_mod(mod_name, text_widget=None):
     if not mod_name or not GAME_PATH:
@@ -1128,14 +912,10 @@ def export_bundle_as_mod_ui(bundle_name=None):
         export_bundle_as_z2f(bundle_name, included, out_path)
         dlg.destroy()
 
-    btns = ttk.Frame(dlg, padding=6)
-    btns.pack(fill=tk.X)
-    ttk.Button(btns, text="Export", command=do_export, bootstyle="success").pack(side=tk.RIGHT, padx=6)
-    ttk.Button(btns, text="Cancel", command=dlg.destroy, bootstyle="secondary").pack(side=tk.RIGHT)
-
 # ---------------- UI Construction ----------------
 settings = load_settings()
 system_theme = get_system_theme()
+
 root = Window(themename="darkly" if system_theme == "dark" else "cosmo")
 root.title(f"ModZT2 v{APP_VERSION}")
 root.geometry("1400x900")
@@ -1199,10 +979,8 @@ game_menu_btn.pack(side=tk.LEFT, padx=4)
 mods_menu_btn = ttk.Menubutton(toolbar, text="Mods", bootstyle="info-outline")
 mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
 mods_menu.add_command(label="Export Load Order", command=export_load_order)
-mods_menu.add_command(label="Backup Mods", command=lambda: run_with_progress(backup_mods, "Backing up mods"))
+mods_menu.add_command(label="Backup Mods", command=lambda: backup_mods)
 mods_menu.add_command(label="Restore Mods", command=lambda: restore_mods)
-mods_menu.add_separator()
-mods_menu.add_command(label="Check Conflicts", command=lambda: (index_mod_files(), detect_conflicts()))
 mods_menu_btn["menu"] = mods_menu
 mods_menu_btn.pack(side=tk.LEFT, padx=4)
 
@@ -1238,34 +1016,16 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT2", command=lambda: messagebox.showinfo("About", "ModZT2 v1.0.2\nCreated by Kael"))
-help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05"))
+help_menu.add_command(label="About ModZT2", command=lambda: messagebox.showinfo("About", "ModZT2 v1.0.3\nCreated by Kael"))
+help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt2"))
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
 
 footer = ttk.Frame(root, padding=4)
 footer.pack(fill=tk.X, side=tk.BOTTOM)
 
-def run_with_progress(task_func, description):
-    def task_wrapper():
-        try:
-            task_func()
-            log_action(f"{description} completed")
-            status_label.config(text=f"{description} - Done")
-        except Exception as e:
-            status_label.config(text=f"Error: {e}")
-        finally:
-            progress.stop()
-
-    progress.start()
-    status_label.config(text=description)
-    threading.Thread(target=task_wrapper, daemon=True).start()
-
 recent_actions = ttk.Combobox(footer, values=["No recent actions"], width=40, state="readonly")
 recent_actions.pack(side=tk.RIGHT, padx=10)
-
-progress = ttk.Progressbar(footer, length=200, mode="indeterminate")
-progress.pack(side=tk.RIGHT, padx=10)
 
 def log_action(action):
     values = list(recent_actions["values"])
@@ -1448,40 +1208,6 @@ ttk.Button(bundle_btns, text="Delete", command=lambda: bundle_delete(), bootstyl
 ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()).pack(side=tk.LEFT, padx=4)
 ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
 ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
-
-trade_split = ttk.PanedWindow(orient=tk.HORIZONTAL)
-trade_split.pack(fill=tk.BOTH, expand=True)
-
-zoo_frame = ttk.Frame(trade_split, padding=8)
-trade_split.add(zoo_frame, weight=1)
-
-ttk.Label(zoo_frame, text="My Zoo", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-zoo_name_lbl = ttk.Label(zoo_frame, text="", bootstyle="secondary")
-zoo_name_lbl.pack(anchor="w", pady=(0, 6))
-
-animal_tree = ttk.Treeview(zoo_frame, columns=("species", "name"), show="headings", height=18)
-animal_tree.heading("species", text="Species")
-animal_tree.heading("name", text="Name")
-animal_tree.pack(fill=tk.BOTH, expand=True)
-
-zoo_btns = ttk.Frame(zoo_frame)
-zoo_btns.pack(fill=tk.X, pady=(6, 0))
-ttk.Button(zoo_btns, text="Sync from Game", bootstyle="info", command=lambda: sync_zoo_from_game()).pack(side=tk.LEFT, padx=4)
-ttk.Button(zoo_btns, text="Export Zoo", bootstyle="secondary", command=export_zoo_as_json).pack(side=tk.LEFT, padx=4)
-
-market_frame = ttk.Frame(trade_split, padding=8)
-trade_split.add(market_frame, weight=1)
-
-ttk.Label(market_frame, text="Trade Market", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-market_tree = ttk.Treeview(market_frame, columns=("zoo", "species", "name"), show="headings", height=18)
-market_tree.heading("zoo", text="Zoo")
-market_tree.heading("species", text="Species")
-market_tree.heading("name", text="Name")
-market_tree.pack(fill=tk.BOTH, expand=True)
-
-market_btns = ttk.Frame(market_frame)
-market_btns.pack(fill=tk.X, pady=(6, 0))
-ttk.Button(market_btns, text="Import Zoo", bootstyle="primary", command=import_zoo_json).pack(side=tk.LEFT, padx=4)
 
 def _selected_bundle_name():
     sel = bundle_list.curselection()
@@ -1673,21 +1399,6 @@ def bundle_disable_all():
 
 refresh_bundles_list()
 
-def refresh_zoo_ui(profile):
-    zoo_name_lbl.config(text=profile.get("zoo_name", "(Unknown Zoo)"))
-
-    animal_tree.delete(*animal_tree.get_children())
-
-    for a in profile.get("animals", []):
-        animal_tree.insert("", "end", values=(a.get("species", "?"), a.get("name", "")))
-
-def refresh_market_ui(zoo):
-    for i in market_tree.get_children(): market_tree.delete(i)
-    for a in zoo.get("animals", []):
-        market_tree.insert("", "end", values=(zoo.get("zoo_name"), a["species"], a["name"]))
-
-refresh_zoo_ui(load_zoo_profile())
-
 log_frame = ttk.Frame(main_frame, padding=6)
 log_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
@@ -1702,11 +1413,6 @@ status_label = ttk.Label(status_frame, text=f"ZT2 path: {GAME_PATH or '(not set)
 status_label.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
 
 root.status_label = status_label
-
-progress_bar = ttk.Progressbar(status_frame, mode='indeterminate', length=200, bootstyle='info')
-progress_bar.pack(side=tk.RIGHT, padx=6, pady=2)
-progress_bar.stop()
-progress_bar.pack_forget()
 
 # ---------------- UI Helper functions ----------------
 def refresh_tree():
@@ -1888,9 +1594,44 @@ def enable_selected_mod():
         enable_mod(mod, text_widget=log_text)
 
 def disable_selected_mod():
+    sel = mods_tree.selection()
     mod = get_selected_mod()
     if mod:
         disable_mod(mod, text_widget=log_text)
+        # Try to restore the same selection after refresh
+        root.after(100, lambda: restore_selection(mod))
+
+def restore_selection(mod_name):
+    for iid in mods_tree.get_children():
+        vals = mods_tree.item(iid, 'values')
+        if vals and vals[0] == mod_name:
+            mods_tree.selection_set(iid)
+            mods_tree.focus(iid)
+            mods_tree.see(iid)
+            break
+
+def save_tree_state(tree):
+    """Save selection and scroll position for a Treeview."""
+    sel = tree.selection()
+    first_visible = tree.index(tree.identify_row(0)) if tree.get_children() else 0
+    return {"sel": sel, "first_visible": first_visible}
+
+def restore_tree_state(tree, state):
+    """Restore selection and scroll position for a Treeview."""
+    if not state:
+        return
+    sel = state.get("sel")
+    if sel:
+        tree.selection_set(sel)
+        tree.focus(sel[0])
+        tree.see(sel[0])
+    else:
+        first = state.get("first_visible", 0)
+        try:
+            iid = tree.get_children()[first]
+            tree.see(iid)
+        except IndexError:
+            pass
 
 def uninstall_selected_mod():
     mod = get_selected_mod()
@@ -2234,22 +1975,6 @@ if not hasattr(root, "_watcher_started"):
     watch_mods(root, refresh_tree, interval=3)
     root._watcher_started = True
 
-def background_scan():
-    def worker():
-        root.after(0, lambda: show_progress("Scanning mods for duplicates and conflicts..."))
-        try:
-            local_conn = sqlite3.connect(DB_FILE)
-            local_cursor = local_conn.cursor()
-
-            detect_existing_mods(local_cursor, local_conn)
-            index_mod_files(local_cursor, local_conn)
-            detect_conflicts(local_cursor, local_conn)
-
-            local_conn.close()
-        finally:
-            root.after(0, hide_progress)
-    threading.Thread(target=worker, daemon=True).start()
-
 # ---------------- Run ----------------
 if __name__ == '__main__':
 
@@ -2265,11 +1990,9 @@ if __name__ == '__main__':
         else:
             log("⚠️ Could not auto-detect Zoo Tycoon 2 path.", log_text)
 
-    root.after(2000, background_scan)
     root.after(30000, auto_switch_theme)
     folder_tree.bind("<<TreeviewOpen>>", on_open_folder)
     folder_tree.bind("<<TreeviewSelect>>", on_select_folder)
-    refresh_market_ui_from_file()
 
 def on_close():
     try:
