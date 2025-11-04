@@ -37,7 +37,7 @@ if platform.system() == "Windows":
         pass
 
 # ---------------- Constants ----------------
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.8"
 SETTINGS_FILE = "settings.json"
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -1327,8 +1327,8 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.0.6\nCreated by Kael"))
-help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05"))
+help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.0.8\nCreated by Kael"))
+help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
 
@@ -1352,11 +1352,22 @@ notebook.add(zt1_tab, text="ZT1 Mods")
 zt1_toolbar = ttk.Frame(zt1_tab)
 zt1_toolbar.pack(fill=tk.X, pady=4)
 
-search_var_zt1 = tk.StringVar()
+zt1_search_var = tk.StringVar()
+zt1_status_filter = tk.StringVar(value="All")
 
-ttk.Label(zt1_toolbar).pack(side=tk.RIGHT, padx=(10, 2))
-search_entry_zt1 = ttk.Entry(zt1_toolbar, textvariable=search_var_zt1, width=20)
-search_entry_zt1.pack(side=tk.RIGHT, padx=4)
+search_frame = ttk.Frame(zt1_tab)
+search_frame.pack(fill="x", padx=6, pady=(4, 0))
+
+ttk.Label(search_frame, text="Search:").pack(side="left")
+search_entry = ttk.Entry(search_frame, textvariable=zt1_search_var)
+search_entry.pack(side="left", fill="x", expand=True, padx=(4, 6))
+
+ttk.Label(search_frame, text="Status:").pack(side="left")
+ttk.OptionMenu(search_frame, zt1_status_filter, "All", "All", "Enabled", "Disabled").pack(side="left")
+
+ttk.Button(search_frame, text="Clear",
+           command=lambda: (zt1_search_var.set(""), zt1_status_filter.set("All"), refresh_zt1_tree())
+           ).pack(side="left", padx=(6, 0))
 
 ttk.Button(zt1_toolbar, text="Enable", bootstyle="success", width=10,
            command=lambda: enable_selected_zt1_mod()).pack(side=tk.LEFT, padx=4)
@@ -1382,7 +1393,7 @@ zt1_tree = ttk.Treeview(
 
 # Headings
 for col in ("Name", "Status", "Category", "Tags", "Size"):
-    zt1_tree.heading(col, text=col)
+    zt1_tree.heading(col, text=col, command=lambda c=col: sort_zt1_tree(c, False))
 
 # Layout
 zt1_tree.column("Name", anchor="w", width=350)
@@ -1454,7 +1465,6 @@ zt1_footer = ttk.Label(
 )
 zt1_footer.pack(anchor="w", padx=6, pady=(2, 0))
 
-
 zt1_menu = tk.Menu(zt1_tree, tearoff=0)
 zt1_menu.add_command(label="Set Category", command=lambda: set_zt1_mod_category())
 
@@ -1483,46 +1493,91 @@ def set_zt1_mod_category():
         conn.commit()
         refresh_zt1_tree()
 
+def sort_zt1_tree(col, reverse=False):
+    """Sort ZT1 TreeView by the selected column (ascending/descending)."""
+    data = [(zt1_tree.set(k, col), k) for k in zt1_tree.get_children("")]
+
+    # Try numeric sort if the column looks like a size
+    if col == "Size":
+        def parse_size(s):
+            try:
+                return float(s.split()[0]) if "KB" in s else 0
+            except Exception:
+                return 0
+        data.sort(key=lambda t: parse_size(t[0]), reverse=reverse)
+    else:
+        data.sort(key=lambda t: str(t[0]).lower(), reverse=reverse)
+
+    # Reorder rows
+    for index, (val, k) in enumerate(data):
+        zt1_tree.move(k, "", index)
+
+    # Update column heading to toggle direction next time
+    zt1_tree.heading(col, command=lambda: sort_zt1_tree(col, not reverse))
+
+    # Optional visual indicator 🔼/🔽
+    for c in ("Name", "Status", "Category", "Tags", "Size"):
+        label = c
+        if c == col:
+            label += " 🔽" if reverse else " 🔼"
+        zt1_tree.heading(c, text=label, command=lambda c=c: sort_zt1_tree(c, not (c == col and reverse)))
+
 def refresh_zt1_tree(filter_text=""):
-    """Refresh ZT1 mods list with optional search filter (includes tags/categories)."""
+    """Refresh ZT1 mods list with optional search filter (includes tags/categories + status)."""
     for row in zt1_tree.get_children():
         zt1_tree.delete(row)
 
     detect_existing_zt1_mods()
 
+    # --- Totals for footer ---
     cursor.execute("SELECT COUNT(*), SUM(enabled) FROM zt1_mods")
     total, enabled_count = cursor.fetchone()
     enabled_count = enabled_count or 0
     disabled_count = total - enabled_count
 
+    # --- Get all mods ---
     cursor.execute("SELECT name, enabled, category, tags FROM zt1_mods ORDER BY name ASC")
+    all_rows = cursor.fetchall()
 
-    visible_count = 0
-    for name, enabled, category, tags in cursor.fetchall():
-        status = "enabled" if enabled else "disabled"
-        display_status = "🟢 Enabled" if enabled else "🔴 Disabled"
+    filter_text = (zt1_search_var.get() or "").strip().lower()
+    status_filter = zt1_status_filter.get().lower()
 
-        mod_path = os.path.join(ZT1_MOD_DIR, name)
-        size = f"{os.path.getsize(mod_path)/1024:.1f} KB" if os.path.exists(mod_path) else "-"
+    visible_rows = []
+    for name, enabled, category, tags in all_rows:
+        status_str = "enabled" if enabled else "disabled"
+        combined = f"{name.lower()} {category.lower() if category else ''} {tags.lower() if tags else ''} {status_str}"
 
-        search_str = f"{name.lower()} {category.lower()} {tags.lower() if tags else ''} {status}"
-        if filter_text and filter_text.lower() not in search_str:
+        # Apply both filters
+        if filter_text and filter_text not in combined:
+            continue
+        if status_filter != "all" and status_str != status_filter:
             continue
 
-        zt1_tree.insert("", tk.END, values=(name, display_status, category, tags or "—", size), tags=(status,))
-        visible_count += 1
+        visible_rows.append((name, enabled, category, tags))
 
+    # --- Populate TreeView ---
+    for name, enabled, category, tags in visible_rows:
+        status = "enabled" if enabled else "disabled"
+        display_status = "🟢 Enabled" if enabled else "🔴 Disabled"
+        mod_path = os.path.join(ZT1_MOD_DIR, name)
+        size = f"{os.path.getsize(mod_path)/1024:.1f} KB" if os.path.exists(mod_path) else "-"
+        zt1_tree.insert("", tk.END, values=(name, display_status, category or "—", tags or "—", size), tags=(status,))
+
+    # --- Footer update ---
     zt1_footer.config(
-        text=f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
+        text=f"ZT1 Mods: Total {total} | Enabled {enabled_count} | Disabled {disabled_count} | Showing {len(visible_rows)}"
     )
 
     apply_zt1_tree_theme()
 
+zt1_search_var.trace_add("write", lambda *_: refresh_zt1_tree())
+zt1_status_filter.trace_add("write", lambda *_: refresh_zt1_tree())
+
 def on_search_zt1(*args):
-    text = search_var_zt1.get().strip()
+    text = zt1_search_var.get().strip()
     refresh_zt1_tree(text)
 
-search_var_zt1.trace_add("write", on_search_zt1)
+zt1_search_var.trace_add("write", on_search_zt1)
 
 def get_selected_zt1_mod():
     sel = zt1_tree.selection()
@@ -1950,23 +2005,38 @@ preview_tree.pack(fill=tk.BOTH, expand=True)
 bundle_stats = tk.StringVar(value="0 mods")
 ttk.Label(bundle_preview, textvariable=bundle_stats, bootstyle="info").pack(anchor="e", pady=(6, 0))
 
+bundle_btns = ttk.Frame(bundles_tab, padding=6)
+bundle_btns.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
+
+def update_bundle_toolbar_state():
+    has_selection = bool(bundle_list.curselection())
+    for btn in (apply_btn, delete_btn):
+        state = "normal" if has_selection else "disabled"
+        btn.config(state=state)
+
+bundle_list.bind("<<ListboxSelect>>", lambda _: update_bundle_toolbar_state())
+
+bundle_btns = ttk.Frame(bundles_tab, padding=6)
+bundle_btns.pack(side=tk.BOTTOM, fill=tk.X)
+
+create_btn = ttk.Button(bundle_btns, text="Create", command=lambda: bundle_create_dialog, bootstyle="success")
+create_btn.pack(side=tk.LEFT, padx=4)
+
+apply_btn = ttk.Button(bundle_btns, text="Apply", command=lambda: bundle_apply, bootstyle="primary", state="disabled")
+apply_btn.pack(side=tk.LEFT, padx=4)
+
+delete_btn = ttk.Button(bundle_btns, text="Delete", command=lambda: bundle_delete, bootstyle="info", state="disabled")
+delete_btn.pack(side=tk.LEFT, padx=4)
+
+ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
+
 preview_btns = ttk.Frame(bundle_preview)
 preview_btns.pack(fill=tk.X, pady=(6, 0))
 ttk.Button(preview_btns, text="Apply Bundle", command=lambda: bundle_apply(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
 ttk.Button(preview_btns, text="Enable All", command=lambda: bundle_enable_all(), bootstyle="success").pack(side=tk.LEFT, padx=4)
 ttk.Button(preview_btns, text="Disable All", command=lambda: bundle_disable_all(), bootstyle="warning").pack(side=tk.LEFT, padx=4)
-
-bundle_btns = ttk.Frame(bundles_tab, padding=6)
-bundle_btns.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
-
-ttk.Separator(bundles_tab, orient="horizontal").pack(side=tk.BOTTOM, fill=tk.X)
-
-ttk.Button(bundle_btns, text="Create", command=lambda: bundle_create_dialog(), bootstyle="secondary").pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Apply", command=lambda: bundle_apply(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Delete", command=lambda: bundle_delete(), bootstyle="danger").pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
 
 def _selected_bundle_name():
     sel = bundle_list.curselection()
