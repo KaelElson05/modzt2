@@ -5,12 +5,13 @@ import sqlite3
 import subprocess
 import json
 import zipfile
+import socket
 import tempfile
 import threading
 import requests
-import webbrowser
 import platform
 import datetime
+import online_manager
 import time
 import tkinter as tk
 import tkinter.simpledialog as simpledialog
@@ -39,7 +40,7 @@ if platform.system() == "Windows":
         pass
 
 # ---------------- Constants ----------------
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.1.0"
 SETTINGS_FILE = "settings.json"
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -57,6 +58,12 @@ GITHUB_REPO = "kaelelson05/modzt"
 GAME_PATH = None
 ZT1_PATH = None
 ZT1_MOD_DIR = None
+ZT2_EXE = None
+
+# --- Load stored paths ---
+if os.path.isfile(GAME_PATH_FILE):
+    with open(GAME_PATH_FILE, "r", encoding="utf-8") as f:
+        GAME_PATH = f.read().strip() or None
 
 if os.path.isfile(ZT1_EXE_FILE):
     with open(ZT1_EXE_FILE, "r", encoding="utf-8") as f:
@@ -65,6 +72,32 @@ if os.path.isfile(ZT1_EXE_FILE):
 if os.path.isfile(ZT1_MOD_DIR_FILE):
     with open(ZT1_MOD_DIR_FILE, "r", encoding="utf-8") as f:
         ZT1_MOD_DIR = f.read().strip()
+
+if GAME_PATH and os.path.isdir(GAME_PATH):
+    ZT2_EXE = os.path.join(GAME_PATH, "zt.exe")
+    if os.path.exists(ZT2_EXE):
+        online_manager.ZT2_PATH = ZT2_EXE
+        print(f"[Online] ZT2 path registered: {ZT2_EXE}")
+    else:
+        print("[Online] Warning: zt2.exe not found in configured path.")
+else:
+    online_manager.ZT2_PATH = None
+    print("[Online] ZT2 path not yet set; will register once chosen.")
+
+if os.path.isfile(ZT1_EXE_FILE):
+    with open(ZT1_EXE_FILE, "r", encoding="utf-8") as f:
+        ZT1_PATH = f.read().strip()
+
+if os.path.isfile(ZT1_MOD_DIR_FILE):
+    with open(ZT1_MOD_DIR_FILE, "r", encoding="utf-8") as f:
+        ZT1_MOD_DIR = f.read().strip()
+
+def get_zt2_saves_dir():
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    p = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "Saved")
+    return p if os.path.isdir(p) else None
 
 # --- Auto-detect common game installation paths ---
 COMMON_ZT2_PATHS = [
@@ -346,7 +379,7 @@ def check_for_updates():
         response.raise_for_status()
         release = response.json()
 
-        latest_version = release["tag_name"].lstrip("v")  # e.g. "v1.2.3" → "1.2.3"
+        latest_version = release["tag_name"].lstrip("v")
         release_url = release["html_url"]
 
         if latest_version > APP_VERSION:
@@ -363,6 +396,86 @@ def check_for_updates():
     except requests.RequestException as e:
         messagebox.showerror("Update Check Failed", f"Could not contact GitHub:\n{e}")
 
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "Unknown"
+
+def stop_host():
+    """Stops the hosting server cleanly and updates the status label."""
+    try:
+        status_var.set("Status: Stopping server...")
+        online_tab.update_idletasks()
+
+        if hasattr(online_manager, "stop_host"):
+            online_manager.stop_host()
+        else:
+            print("[Online] stop_host() not found in online_manager")
+
+        online_tab.after(0, lambda: status_var.set("Status: Server stopped."))
+
+    except Exception as e:
+        print(f"[Online] Stop error: {e}")
+        online_tab.after(0, lambda: status_var.set(f"Status: Stop error — {e}"))
+
+def refresh_connection_info():
+    """Refreshes displayed connection info every few seconds."""
+    def loop():
+        while True:
+            local, public, port = online_manager.get_connection_info()
+            local_ip_var.set(f"Local IP: {local}")
+            public_ip_var.set(f"Public IP: {public}")
+            port_var.set(f"Port: {port}")
+            time.sleep(5)
+    threading.Thread(target=loop, daemon=True).start()
+
+refresh_connection_info()
+
+def host_session():
+    """Starts an online hosting session for multiplayer sync."""
+    try:
+        status_var.set("Status: Starting host server...")
+        online_tab.update_idletasks()
+
+        if online_manager.start_host():
+            online_manager.start_save_watcher()
+            status_var.set("Status: Hosting active. Save sync enabled.")
+        else:
+            status_var.set("Status: Failed to start host.")
+
+        update_connection_info_now()
+
+    except Exception as e:
+        status_var.set(f"Status: Error starting host — {e}")
+        messagebox.showerror("Error", f"Failed to host session:\n{e}")
+
+def join_session_dialog():
+    """Dialog for joining an online session (client side)."""
+    ip = simpledialog.askstring("Join Session", "Enter host IP address:")
+    if not ip:
+        return
+
+    try:
+        sock = online_manager.join_session(ip)
+        if sock:
+            messagebox.showinfo("Connected", f"Connected to host at {ip}.")
+            status_var.set("Status: Connected to host.")
+            log(f"[Online] Connected to host {ip}", log_text)
+        else:
+            messagebox.showerror("Connection Error", f"Could not connect to {ip}.")
+            status_var.set("Status: Connection failed.")
+            log(f"[Online] Connection failed to {ip}", log_text)
+    except Exception as e:
+        messagebox.showerror("Connection Error", f"Could not connect to {ip}\n\n{e}")
+        status_var.set(f"Status: Error connecting — {e}")
+        log(f"[Online] Connection error: {e}", log_text)
+
 # ---------------- Game Crash Detection ----------------
 def monitor_game_crash(proc, game_name="ZT2", timeout=10):
     """
@@ -378,13 +491,12 @@ def monitor_game_crash(proc, game_name="ZT2", timeout=10):
             time.sleep(1)
         exit_code = proc.returncode
     except Exception as e:
-        exit_code = -999  # unknown crash
+        exit_code = -999
         with open(crash_log, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.datetime.now()}] Exception monitoring {game_name}: {e}\n")
 
     elapsed = time.time() - start_time
     if exit_code != 0 or elapsed < timeout:
-        # Log details
         with open(crash_log, "a", encoding="utf-8") as f:
             f.write("------ Game Crash Detected ------\n")
             f.write(f"Game: {game_name}\n")
@@ -475,7 +587,7 @@ def enabled_count():
     cursor.execute("SELECT COUNT(*) FROM mods WHERE enabled=1")
     return cursor.fetchone()[0]
 
-# -------- ZT2 Screenshots (albums) --------
+# -------- Screenshots --------
 def get_zt2_photos_root():
     """Return the default ZT2 screenshots root, or None if not found."""
     appdata = os.environ.get("APPDATA")
@@ -587,11 +699,9 @@ def launch_game(params=None):
             elif isinstance(params, (list, tuple)):
                 cmd += list(params)
 
-        # Launch the game with parameters (if any)
         proc = subprocess.Popen(cmd, cwd=GAME_PATH, shell=False)
         log("🎮 Launched Zoo Tycoon 2", text_widget=log_text)
 
-        # Background thread monitors crash
         threading.Thread(target=monitor_game_crash, args=(proc, "ZT2"), daemon=True).start()
 
     except Exception as e:
@@ -1355,9 +1465,9 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.0.9\nCreated by Kael"))
+help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.1.0\nCreated by Kael"))
 help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
-help_menu.add_command(label="Check for Updates",command=lambda: check_for_updates)
+help_menu.add_command(label="Check for Updates", command=check_for_updates)
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
 
@@ -1409,7 +1519,6 @@ ttk.Button(zt1_toolbar, text="Open Mods Folder", width=16,
            if ZT1_PATH else messagebox.showerror("Error", "ZT1 path not set.")
            ).pack(side=tk.LEFT, padx=4)
 
-# --- ZT1 Mods Treeview Frame ---
 zt1_frame = ttk.Frame(zt1_tab)
 zt1_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
@@ -1420,18 +1529,15 @@ zt1_tree = ttk.Treeview(
     height=18,
 )
 
-# Headings
 for col in ("Name", "Status", "Category", "Tags", "Size"):
     zt1_tree.heading(col, text=col, command=lambda c=col: sort_zt1_tree(c, False))
 
-# Layout
 zt1_tree.column("Name", anchor="w", width=350)
 zt1_tree.column("Status", anchor="center", width=80)
 zt1_tree.column("Category", anchor="center", width=120)
 zt1_tree.column("Tags", anchor="center", width=180)
 zt1_tree.column("Size", anchor="e", width=80)
 
-# Scrollbar
 scrollbar = ttk.Scrollbar(zt1_frame, orient=tk.VERTICAL, command=zt1_tree.yview)
 zt1_tree.configure(yscrollcommand=scrollbar.set)
 zt1_tree.grid(row=0, column=0, sticky="nsew")
@@ -1440,7 +1546,6 @@ scrollbar.grid(row=0, column=1, sticky="ns")
 zt1_frame.rowconfigure(0, weight=1)
 zt1_frame.columnconfigure(0, weight=1)
 
-# Dynamic Resize
 def auto_resize_columns(event):
     total_width = event.width
     ratios = {"Name": 0.4, "Status": 0.1, "Category": 0.15, "Tags": 0.15, "Size": 0.1}
@@ -1483,7 +1588,6 @@ def set_zt1_mod_tags():
         set_mod_tags(name, tags, zt1=True)
         refresh_zt1_tree()
 
-# --- Buttons under the table ---
 zt1_mod_btns = ttk.Frame(zt1_tab, padding=6)
 zt1_mod_btns.pack(fill=tk.X)
 
@@ -1526,7 +1630,6 @@ def sort_zt1_tree(col, reverse=False):
     """Sort ZT1 TreeView by the selected column (ascending/descending)."""
     data = [(zt1_tree.set(k, col), k) for k in zt1_tree.get_children("")]
 
-    # Try numeric sort if the column looks like a size
     if col == "Size":
         def parse_size(s):
             try:
@@ -1537,14 +1640,11 @@ def sort_zt1_tree(col, reverse=False):
     else:
         data.sort(key=lambda t: str(t[0]).lower(), reverse=reverse)
 
-    # Reorder rows
     for index, (val, k) in enumerate(data):
         zt1_tree.move(k, "", index)
 
-    # Update column heading to toggle direction next time
     zt1_tree.heading(col, command=lambda: sort_zt1_tree(col, not reverse))
 
-    # Optional visual indicator 🔼/🔽
     for c in ("Name", "Status", "Category", "Tags", "Size"):
         label = c
         if c == col:
@@ -1558,13 +1658,11 @@ def refresh_zt1_tree(filter_text=""):
 
     detect_existing_zt1_mods()
 
-    # --- Totals for footer ---
     cursor.execute("SELECT COUNT(*), SUM(enabled) FROM zt1_mods")
     total, enabled_count = cursor.fetchone()
     enabled_count = enabled_count or 0
     disabled_count = total - enabled_count
 
-    # --- Get all mods ---
     cursor.execute("SELECT name, enabled, category, tags FROM zt1_mods ORDER BY name ASC")
     all_rows = cursor.fetchall()
 
@@ -1576,7 +1674,6 @@ def refresh_zt1_tree(filter_text=""):
         status_str = "enabled" if enabled else "disabled"
         combined = f"{name.lower()} {category.lower() if category else ''} {tags.lower() if tags else ''} {status_str}"
 
-        # Apply both filters
         if filter_text and filter_text not in combined:
             continue
         if status_filter != "all" and status_str != status_filter:
@@ -1584,7 +1681,6 @@ def refresh_zt1_tree(filter_text=""):
 
         visible_rows.append((name, enabled, category, tags))
 
-    # --- Populate TreeView ---
     for name, enabled, category, tags in visible_rows:
         status = "enabled" if enabled else "disabled"
         display_status = "🟢 Enabled" if enabled else "🔴 Disabled"
@@ -1592,7 +1688,6 @@ def refresh_zt1_tree(filter_text=""):
         size = f"{os.path.getsize(mod_path)/1024:.1f} KB" if os.path.exists(mod_path) else "-"
         zt1_tree.insert("", tk.END, values=(name, display_status, category or "—", tags or "—", size), tags=(status,))
 
-    # --- Footer update ---
     zt1_footer.config(
         text=f"ZT1 Mods: Total {total} | Enabled {enabled_count} | Disabled {disabled_count} | Showing {len(visible_rows)}"
     )
@@ -1734,11 +1829,10 @@ notebook.add(bundles_tab, text="Bundles")
 explorer_tab = ttk.Frame(notebook, padding=6)
 notebook.add(explorer_tab, text="Explorer")
 
-# ---- Screenshots Tab ----
+# ---- Screenshots ----
 shots_tab = ttk.Frame(notebook, padding=6)
 notebook.add(shots_tab, text="Screenshots")
 
-# Toolbar
 shots_toolbar = ttk.Frame(shots_tab)
 shots_toolbar.pack(fill=tk.X, pady=(0,6))
 
@@ -1764,11 +1858,9 @@ def open_current_root():
 
 ttk.Button(shots_toolbar, text="Open Folder", command=open_current_root).pack(side=tk.LEFT, padx=4)
 
-# Split: Albums (left) + Thumbnails grid (right)
 shots_split = ttk.PanedWindow(shots_tab, orient=tk.HORIZONTAL)
 shots_split.pack(fill=tk.BOTH, expand=True)
 
-# Albums list
 shots_left = ttk.Frame(shots_split, width=220, padding=(4,6))
 shots_left.pack_propagate(False)
 shots_split.add(shots_left, weight=0)
@@ -1781,7 +1873,6 @@ album_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 album_list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 album_list_scroll.config(command=album_list.yview)
 
-# Right: scrollable thumbnails grid
 shots_right = ttk.Frame(shots_split, padding=(6,6))
 shots_split.add(shots_right, weight=1)
 
@@ -2272,6 +2363,85 @@ status_label.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
 
 root.status_label = status_label
 
+online_tab = ttk.Frame(notebook, padding=10)
+notebook.add(online_tab, text="Online")
+
+import online_manager
+import threading
+import time
+
+connection_frame = ttk.Labelframe(online_tab, text="Connection Info", padding=8)
+connection_frame.pack(fill="x", pady=(0, 8))
+
+local_ip_var = tk.StringVar(value="Local IP: —")
+public_ip_var = tk.StringVar(value="Public IP: —")
+port_var = tk.StringVar(value="Port: —")
+
+ttk.Label(connection_frame, textvariable=local_ip_var).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+ttk.Label(connection_frame, textvariable=public_ip_var).grid(row=1, column=0, sticky="w", padx=6, pady=2)
+ttk.Label(connection_frame, textvariable=port_var).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+
+status_var = tk.StringVar(value="Status: Idle")
+status_label = ttk.Label(online_tab, textvariable=status_var, justify="left")
+status_label.pack(anchor="w", padx=10, pady=(0, 10))
+
+session_frame = ttk.Labelframe(online_tab, text="Session Controls", padding=8)
+session_frame.pack(fill="x", pady=(0, 8))
+
+button_row = ttk.Frame(session_frame)
+button_row.pack(fill="x", pady=4)
+
+ttk.Button(button_row, text="Host Session", bootstyle="success", command=lambda: host_session()).pack(side="left", padx=6)
+ttk.Button(button_row, text="Stop Hosting", bootstyle="danger", command=stop_host).pack(side="left", padx=6)
+ttk.Button(button_row, text="Join Session", bootstyle="primary", command=lambda: join_session_dialog()).pack(side="left", padx=6)
+
+clients_frame = ttk.Labelframe(online_tab, text="Connected Clients", padding=8)
+clients_frame.pack(fill="both", expand=True)
+
+clients_listbox = tk.Listbox(clients_frame, height=8)
+clients_listbox.pack(fill="both", expand=True, padx=6, pady=4)
+
+# ===== Functions =====
+
+def update_connection_info_now():
+    """Refresh connection info asynchronously and update the UI safely."""
+    def on_info(local, public, port):
+        online_tab.after(0, lambda: (
+            local_ip_var.set(f"Local IP: {local}"),
+            public_ip_var.set(f"Public IP: {public}"),
+            port_var.set(f"Port: {port}")
+        ))
+    try:
+        online_manager.get_connection_info(callback=on_info)
+    except Exception as e:
+        online_tab.after(0, lambda: (
+            local_ip_var.set("Local IP: Error"),
+            public_ip_var.set(f"Public IP: {e}"),
+            port_var.set("Port: —")
+        ))
+
+def refresh_connection_info():
+    def loop():
+        while True:
+            update_connection_info_now()
+            time.sleep(5)
+    threading.Thread(target=loop, daemon=True).start()
+
+refresh_connection_info()
+
+def update_client_list(clients):
+    """Update the connected clients list in the UI."""
+    clients_listbox.delete(0, tk.END)
+    if not clients:
+        clients_listbox.insert(tk.END, "(No connected clients)")
+        return
+    for addr in clients:
+        clients_listbox.insert(tk.END, f"{addr[0]}:{addr[1]}")
+
+online_manager.set_client_update_callback(update_client_list)
+
+update_connection_info_now()
+
 # ---------------- UI Helper functions ----------------
 def refresh_tree():
     for row in mods_tree.get_children():
@@ -2304,10 +2474,6 @@ def refresh_tree():
             ('missing' if not find_mod_file(name) else 'disabled')
         )
         mods_tree.insert("", tk.END, values=r, tags=(tag,))
-
-    for r in rows:
-        iid = mods_tree.insert("", tk.END, values=r)
-        mods_tree.item(iid, tags=("enabled" if r[1] == "Enabled" else "disabled",))
 
     mod_count_label.config(text=f"Total mods: {total} | Enabled: {enabled} | Disabled: {disabled}")
     apply_tree_theme()
