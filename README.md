@@ -25,6 +25,8 @@ Features of the mod manager include:
   - Live action log and recent actions list
   - Dark/light themes with one click
 
+  - Real-time save state syncing between host and client session (alpha)
+
 ---
 
 ## Building
@@ -72,6 +74,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
