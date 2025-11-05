@@ -7,6 +7,8 @@ import json
 import zipfile
 import tempfile
 import threading
+import requests
+import webbrowser
 import platform
 import datetime
 import time
@@ -37,7 +39,7 @@ if platform.system() == "Windows":
         pass
 
 # ---------------- Constants ----------------
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 SETTINGS_FILE = "settings.json"
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -49,6 +51,7 @@ DB_FILE = os.path.join(CONFIG_DIR, "mods.db")
 ICON_FILE = os.path.join(CONFIG_DIR, "modzt.ico")
 BANNER_FILE = os.path.join(CONFIG_DIR, "banner.png")
 FILEMAP_CACHE = os.path.join(CONFIG_DIR, "mod_filemap.json")
+GITHUB_REPO = "kaelelson05/modzt"
 
 # ---------------- Global State ----------------
 GAME_PATH = None
@@ -334,6 +337,31 @@ def detect_existing_zt1_mods():
         if name not in scanned:
             cursor.execute("DELETE FROM zt1_mods WHERE name=?", (name,))
     conn.commit()
+
+def check_for_updates():
+    """Check GitHub Releases for a newer version."""
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        release = response.json()
+
+        latest_version = release["tag_name"].lstrip("v")  # e.g. "v1.2.3" → "1.2.3"
+        release_url = release["html_url"]
+
+        if latest_version > APP_VERSION:
+            if messagebox.askyesno(
+                "Update Available",
+                f"A new version ({latest_version}) is available!\n\n"
+                f"You're using {APP_VERSION}.\n\n"
+                "Would you like to open the release page?"
+            ):
+                webbrowser.open(release_url)
+        else:
+            messagebox.showinfo("Up to Date", f"You're running the latest version ({APP_VERSION}).")
+
+    except requests.RequestException as e:
+        messagebox.showerror("Update Check Failed", f"Could not contact GitHub:\n{e}")
 
 # ---------------- Game Crash Detection ----------------
 def monitor_game_crash(proc, game_name="ZT2", timeout=10):
@@ -1327,8 +1355,9 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.0.8\nCreated by Kael"))
+help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.0.9\nCreated by Kael"))
 help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
+help_menu.add_command(label="Check for Updates",command=lambda: check_for_updates)
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
 
