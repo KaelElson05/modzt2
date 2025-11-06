@@ -12,6 +12,7 @@ import requests
 import platform
 import datetime
 import online_manager
+import state_manager
 import time
 import tkinter as tk
 import tkinter.simpledialog as simpledialog
@@ -39,8 +40,7 @@ if platform.system() == "Windows":
     except Exception:
         pass
 
-# ---------------- Constants ----------------
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 SETTINGS_FILE = "settings.json"
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -53,14 +53,15 @@ ICON_FILE = os.path.join(CONFIG_DIR, "modzt.ico")
 BANNER_FILE = os.path.join(CONFIG_DIR, "banner.png")
 FILEMAP_CACHE = os.path.join(CONFIG_DIR, "mod_filemap.json")
 GITHUB_REPO = "kaelelson05/modzt"
+SERVER_URL = "http://localhost:5000"
 
 # ---------------- Global State ----------------
 GAME_PATH = None
 ZT1_PATH = None
 ZT1_MOD_DIR = None
 ZT2_EXE = None
+_client_socket = None
 
-# --- Load stored paths ---
 if os.path.isfile(GAME_PATH_FILE):
     with open(GAME_PATH_FILE, "r", encoding="utf-8") as f:
         GAME_PATH = f.read().strip() or None
@@ -99,7 +100,6 @@ def get_zt2_saves_dir():
     p = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "Saved")
     return p if os.path.isdir(p) else None
 
-# --- Auto-detect common game installation paths ---
 COMMON_ZT2_PATHS = [
     r"C:\Program Files (x86)\Microsoft Games\Zoo Tycoon 2",
     r"C:\Program Files\Microsoft Games\Zoo Tycoon 2",
@@ -122,7 +122,6 @@ def open_mods_folder():
         os.startfile(path)
 
 def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and PyInstaller."""
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -130,7 +129,6 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def load_settings():
-    """Load settings.json safely, creating defaults if missing."""
     if not os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "w") as f:
             json.dump(DEFAULT_SETTINGS, f, indent=4)
@@ -145,7 +143,6 @@ def load_settings():
         return DEFAULT_SETTINGS.copy()
     
 def save_settings(settings):
-    """Save settings.json safely."""
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=4)
 
@@ -219,10 +216,45 @@ def auto_detect_zt2_installation():
 
     return None
 
+def build_chat_ui(parent, is_host=False, client_sock=None):
+    chat_frame = ttk.Labelframe(parent, text="Chat", padding=8)
+    chat_frame.pack(fill="both", expand=True, pady=(8, 0))
+
+    chat_log = tk.Text(chat_frame, height=10, state="disabled", wrap="word")
+    chat_log.pack(fill="both", expand=True, padx=6, pady=4)
+
+    chat_entry = ttk.Entry(chat_frame)
+    chat_entry.pack(fill="x", padx=6, pady=(0, 4))
+
+    def append_chat(msg: str):
+        chat_log.configure(state="normal")
+        chat_log.insert("end", msg + "\n")
+        chat_log.configure(state="disabled")
+        chat_log.see("end")
+
+    def send_chat():
+        text = chat_entry.get().strip()
+        if not text:
+            return
+        append_chat(f"You: {text}")
+        chat_entry.delete(0, "end")
+
+        if is_host:
+            online_manager.broadcast_chat(text)
+        elif client_sock:
+            online_manager.send_chat_to_host(client_sock, text)
+        else:
+            append_chat("[!] Not connected to any session.")
+
+    chat_entry.bind("<Return>", lambda e: send_chat())
+
+    online_manager.set_chat_callback(lambda msg: append_chat(msg))
+
+    return chat_frame
+
 sort_state = {"column": "Name", "reverse": False}
 ui_mode = {"compact": False}
 
-# ---------------- Database ----------------
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
@@ -269,7 +301,6 @@ CREATE TABLE IF NOT EXISTS bundle_mods (
 conn.commit()
 
 def ensure_category_column():
-    """Ensure that the 'category' column exists in both mod tables."""
     cursor.execute("PRAGMA table_info(mods)")
     mods_cols = [col[1] for col in cursor.fetchall()]
     if "category" not in mods_cols:
@@ -287,7 +318,6 @@ cursor = conn.cursor()
 ensure_category_column()
 
 def ensure_db_schema():
-    """Ensure new columns/tables exist for categories and tags."""
     for table in ("mods", "zt1_mods"):
         cursor.execute(f"PRAGMA table_info({table})")
         cols = [c[1] for c in cursor.fetchall()]
@@ -299,7 +329,6 @@ def ensure_db_schema():
 
 ensure_db_schema()
 
-# ---------------- Helpers ----------------
 def log(msg, text_widget=None):
     timestamp = time.strftime("%H:%M:%S")
     full = f"[{timestamp}] {msg}"
@@ -315,7 +344,6 @@ def save_game_path(p):
         f.write(p)
 
 def get_game_path():
-    """Return a valid Zoo Tycoon 2 path or prompt user if not set."""
     global GAME_PATH, settings
 
     if GAME_PATH and os.path.exists(GAME_PATH):
@@ -333,7 +361,6 @@ def get_game_path():
         return None
     
 def zt1_mods_disabled_dir():
-    """Return the path to the disabled mods folder for ZT1."""
     if ZT1_MOD_DIR:
         return os.path.join(ZT1_MOD_DIR, "_disabled")
     elif ZT1_PATH:
@@ -372,7 +399,6 @@ def detect_existing_zt1_mods():
     conn.commit()
 
 def check_for_updates():
-    """Check GitHub Releases for a newer version."""
     try:
         url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         response = requests.get(url, timeout=5)
@@ -396,7 +422,6 @@ def check_for_updates():
     except requests.RequestException as e:
         messagebox.showerror("Update Check Failed", f"Could not contact GitHub:\n{e}")
 
-
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -408,7 +433,6 @@ def get_local_ip():
         return "Unknown"
 
 def stop_host():
-    """Stops the hosting server cleanly and updates the status label."""
     try:
         status_var.set("Status: Stopping server...")
         online_tab.update_idletasks()
@@ -425,7 +449,6 @@ def stop_host():
         online_tab.after(0, lambda: status_var.set(f"Status: Stop error — {e}"))
 
 def refresh_connection_info():
-    """Refreshes displayed connection info every few seconds."""
     def loop():
         while True:
             local, public, port = online_manager.get_connection_info()
@@ -438,7 +461,6 @@ def refresh_connection_info():
 refresh_connection_info()
 
 def host_session():
-    """Starts an online hosting session for multiplayer sync."""
     try:
         status_var.set("Status: Starting host server...")
         online_tab.update_idletasks()
@@ -456,7 +478,6 @@ def host_session():
         messagebox.showerror("Error", f"Failed to host session:\n{e}")
 
 def join_session_dialog():
-    """Dialog for joining an online session (client side)."""
     ip = simpledialog.askstring("Join Session", "Enter host IP address:")
     if not ip:
         return
@@ -466,6 +487,8 @@ def join_session_dialog():
         if sock:
             messagebox.showinfo("Connected", f"Connected to host at {ip}.")
             status_var.set("Status: Connected to host.")
+            global _client_socket
+            _client_socket = sock
             log(f"[Online] Connected to host {ip}", log_text)
         else:
             messagebox.showerror("Connection Error", f"Could not connect to {ip}.")
@@ -476,12 +499,7 @@ def join_session_dialog():
         status_var.set(f"Status: Error connecting — {e}")
         log(f"[Online] Connection error: {e}", log_text)
 
-# ---------------- Game Crash Detection ----------------
 def monitor_game_crash(proc, game_name="ZT2", timeout=10):
-    """
-    Monitors a launched game process for early termination or error exit.
-    - timeout: seconds before we consider 'too fast' = likely crash
-    """
     start_time = time.time()
     pid = proc.pid
     crash_log = os.path.join(CONFIG_DIR, f"{game_name.lower()}_crash.log")
@@ -512,7 +530,6 @@ def monitor_game_crash(proc, game_name="ZT2", timeout=10):
         )
 
 def enable_zt1_mod(name, text_widget=None):
-    """Move a ZT1 mod from the disabled folder back to active mods."""
     if not ZT1_MOD_DIR or not os.path.isdir(ZT1_MOD_DIR):
         messagebox.showerror("Error", "ZT1 mod folder not set.")
         return
@@ -536,7 +553,6 @@ def enable_zt1_mod(name, text_widget=None):
         messagebox.showerror("Error", f"Failed to enable mod:\n{e}")
 
 def disable_zt1_mod(name, text_widget=None):
-    """Move a ZT1 mod from active to disabled folder."""
     if not ZT1_MOD_DIR or not os.path.isdir(ZT1_MOD_DIR):
         messagebox.showerror("Error", "ZT1 mod folder not set.")
         return
@@ -571,7 +587,6 @@ def get_mod_category(mod_name, zt1=False):
     return row[0] if row else "Uncategorized"
 
 def set_mod_tags(mod_name, tags, zt1=False):
-    """Store tags as comma-separated string."""
     table = "zt1_mods" if zt1 else "mods"
     tags_str = ", ".join(sorted(set([t.strip() for t in tags if t.strip()])))
     cursor.execute(f"UPDATE {table} SET tags=? WHERE name=?", (tags_str, mod_name))
@@ -587,9 +602,7 @@ def enabled_count():
     cursor.execute("SELECT COUNT(*) FROM mods WHERE enabled=1")
     return cursor.fetchone()[0]
 
-# -------- Screenshots --------
 def get_zt2_photos_root():
-    """Return the default ZT2 screenshots root, or None if not found."""
     appdata = os.environ.get("APPDATA")
     if not appdata:
         return None
@@ -597,10 +610,6 @@ def get_zt2_photos_root():
     return root if os.path.isdir(root) else None
 
 def list_zt2_albums(root):
-    """
-    Return a list of (album_name, album_path) sorted by album index.
-    Accepts directories named album0, album1, ...
-    """
     albums = []
     for p in Path(root).glob("album*"):
         if p.is_dir():
@@ -614,7 +623,6 @@ def list_zt2_albums(root):
     return sorted(albums, key=_key)
 
 def list_album_images(album_path):
-    """Return list of image file paths in an album (common ZT2 formats are JPG/PNG/BMP)."""
     exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp")
     imgs = []
     for pat in exts:
@@ -623,7 +631,6 @@ def list_album_images(album_path):
     return imgs
 
 def set_dependencies(mod_name, dependencies):
-    """Store dependency links in the DB."""
     cursor.execute("DELETE FROM mod_dependencies WHERE mod_name=?", (mod_name,))
     for dep in dependencies:
         cursor.execute("INSERT INTO mod_dependencies (mod_name, depends_on) VALUES (?, ?)", (mod_name, dep))
@@ -638,7 +645,6 @@ def get_dependents(target_mod):
     return [r[0] for r in cursor.fetchall()]
 
 def get_system_theme():
-    """Return 'dark' or 'light' based on OS theme setting."""
     try:
         if platform.system() == "Windows":
             import winreg
@@ -666,7 +672,6 @@ def get_system_theme():
     except Exception:
         return "dark"
 
-# ---------------- Game Path ----------------
 def set_game_path(lbl_widget=None, status_widget=None):
     global GAME_PATH
     path = filedialog.askdirectory(title="Select Zoo Tycoon 2 Game Folder")
@@ -707,7 +712,6 @@ def launch_game(params=None):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to launch ZT2: {e}")
 
-# ---------------- Filesystem helpers ----------------
 def mods_disabled_dir():
     return os.path.join(GAME_PATH, "Mods", "Disabled")
 
@@ -781,7 +785,6 @@ def index_mod_files(cursor=None, conn=None, force=False):
             json.dump(cache, f, indent=2)
 
 def file_hash(path):
-    """Return SHA1 hash of file content for duplicate detection."""
     h = hashlib.sha1()
     try:
         with open(path, "rb") as f:
@@ -791,7 +794,6 @@ def file_hash(path):
     except Exception:
         return None
 
-# ---------------- Mod Management ----------------
 def detect_existing_mods(cursor=None, conn=None):
     if not GAME_PATH:
         return
@@ -817,7 +819,6 @@ def detect_existing_mods(cursor=None, conn=None):
             mtime = os.path.getmtime(full_path)
             scanned[f] = (enabled, mtime)
 
-    # --- Update DB entries ---
     for mod_name, (enabled, mtime) in scanned.items():
         cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
         exists = cursor.fetchone()[0]
@@ -827,7 +828,6 @@ def detect_existing_mods(cursor=None, conn=None):
             cursor.execute("UPDATE mods SET enabled=? WHERE name=?", (enabled, mod_name))
     conn.commit()
 
-    # --- Remove entries for deleted mods ---
     cursor.execute("SELECT name FROM mods")
     for (name,) in cursor.fetchall():
         if name not in scanned:
@@ -1028,7 +1028,6 @@ def export_load_order():
     messagebox.showinfo("Exported", f"Load order exported to:\n{path}")
     log(f"Exported load order to {path}", text_widget=log_text)
 
-# ---------------- Watcher ----------------
 def watch_mods(root, refresh_func, interval=5):
     def worker():
         last_snapshot = set()
@@ -1068,7 +1067,6 @@ def watch_mods(root, refresh_func, interval=5):
             time.sleep(interval)
     threading.Thread(target=worker, daemon=True).start()
 
-# ---------------- Bundles ----------------
 def create_bundle(bundle_name, mod_list):
     if not bundle_name or not mod_list:
         return False
@@ -1170,12 +1168,7 @@ def import_bundle_from_json(path=None):
         msg += f"\n{len(missing)} mods were missing locally and were not added: {', '.join(missing)}"
     messagebox.showinfo("Imported", msg)
 
-# ---------------- Merge / Export .z2f ----------------
 def export_bundle_as_z2f(bundle_name, include_files, output_path):
-    """
-    include_files: set of relative file paths to include (paths inside the z2f archives)
-    output_path: full path to write the .z2f
-    """
     mods = get_bundle_mods(bundle_name)
     if not mods:
         messagebox.showerror("Error", "Bundle not found or empty")
@@ -1290,7 +1283,6 @@ def export_bundle_as_mod_ui(bundle_name=None):
         export_bundle_as_z2f(bundle_name, included, out_path)
         dlg.destroy()
 
-# ---------------- UI Construction ----------------
 settings = load_settings()
 system_theme = get_system_theme()
 
@@ -1308,10 +1300,9 @@ else:
 
 root = Window(themename="darkly" if system_theme == "dark" else "cosmo")
 root.title(f"ModZT v{APP_VERSION}")
-root.geometry("1400x900")
+root.geometry("1400x1000")
 
 def auto_switch_theme():
-    """Auto-switch between dark/light when system theme changes."""
     try:
         current_system = get_system_theme()
         current_app = "dark" if root.style.theme.name == "darkly" else "light"
@@ -1465,7 +1456,7 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.1.0\nCreated by Kael"))
+help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.1.1\nCreated by Kael"))
 help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
 help_menu.add_command(label="Check for Updates", command=check_for_updates)
 help_menu_btn["menu"] = help_menu
@@ -1627,7 +1618,6 @@ def set_zt1_mod_category():
         refresh_zt1_tree()
 
 def sort_zt1_tree(col, reverse=False):
-    """Sort ZT1 TreeView by the selected column (ascending/descending)."""
     data = [(zt1_tree.set(k, col), k) for k in zt1_tree.get_children("")]
 
     if col == "Size":
@@ -1652,7 +1642,6 @@ def sort_zt1_tree(col, reverse=False):
         zt1_tree.heading(c, text=label, command=lambda c=c: sort_zt1_tree(c, not (c == col and reverse)))
 
 def refresh_zt1_tree(filter_text=""):
-    """Refresh ZT1 mods list with optional search filter (includes tags/categories + status)."""
     for row in zt1_tree.get_children():
         zt1_tree.delete(row)
 
@@ -1689,7 +1678,7 @@ def refresh_zt1_tree(filter_text=""):
         zt1_tree.insert("", tk.END, values=(name, display_status, category or "—", tags or "—", size), tags=(status,))
 
     zt1_footer.config(
-        text=f"ZT1 Mods: Total {total} | Enabled {enabled_count} | Disabled {disabled_count} | Showing {len(visible_rows)}"
+        text=f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
     )
 
     apply_zt1_tree_theme()
@@ -1787,7 +1776,6 @@ def on_mod_right_click(event):
         mods_menu.post(event.x_root, event.y_root)
 
 def treeview_sort_column(tree, col, reverse=False):
-    """Sort Treeview contents when a column header is clicked."""
     data = [(tree.set(k, col), k) for k in tree.get_children('')]
 
     try:
@@ -1829,7 +1817,6 @@ notebook.add(bundles_tab, text="Bundles")
 explorer_tab = ttk.Frame(notebook, padding=6)
 notebook.add(explorer_tab, text="Explorer")
 
-# ---- Screenshots ----
 shots_tab = ttk.Frame(notebook, padding=6)
 notebook.add(shots_tab, text="Screenshots")
 
@@ -1909,7 +1896,6 @@ def make_thumbnail(path, size=(220, 140)):
         return None
 
 def show_full_preview(img_paths, start_index=0):
-    """Simple preview window with Next/Prev and 'Open in folder'/'Export'."""
     if not img_paths:
         return
     idx = max(0, min(start_index, len(img_paths)-1))
@@ -2165,7 +2151,6 @@ def _selected_bundle_name():
     return bundle_list.get(sel[0])
 
 def refresh_bundles_list():
-    """Reloads the bundle list from DB and reapplies current filter."""
     global _all_bundle_names_cache
     cursor.execute("SELECT name FROM bundles ORDER BY name ASC")
     names = [r[0] for r in cursor.fetchall()]
@@ -2173,7 +2158,6 @@ def refresh_bundles_list():
     _apply_bundle_filter()
 
 def _apply_bundle_filter(*_):
-    """Apply search filter to cached bundle names."""
     query = bundle_search_var.get().strip().lower()
     bundle_list.delete(0, tk.END)
 
@@ -2190,7 +2174,6 @@ def _apply_bundle_filter(*_):
         bundle_list.insert(tk.END, n)
 
 def refresh_bundle_preview(event=None):
-    """Populate right preview panel for current selection."""
     name = _selected_bundle_name()
     if not name or name.startswith("("):
         bundle_name_lbl.config(text="(Select a bundle)")
@@ -2247,7 +2230,6 @@ def _bundle_context_menu(event):
 bundle_list.bind("<Button-3>", _bundle_context_menu)
 
 def bundle_create_dialog():
-    """Dialog to create a bundle and refresh UI when done."""
     dlg = tk.Toplevel(root)
     dlg.title("Create Bundle")
     dlg.geometry("420x500")
@@ -2366,10 +2348,6 @@ root.status_label = status_label
 online_tab = ttk.Frame(notebook, padding=10)
 notebook.add(online_tab, text="Online")
 
-import online_manager
-import threading
-import time
-
 connection_frame = ttk.Labelframe(online_tab, text="Connection Info", padding=8)
 connection_frame.pack(fill="x", pady=(0, 8))
 
@@ -2401,10 +2379,16 @@ clients_frame.pack(fill="both", expand=True)
 clients_listbox = tk.Listbox(clients_frame, height=8)
 clients_listbox.pack(fill="both", expand=True, padx=6, pady=4)
 
-# ===== Functions =====
+zoo_state_var = tk.StringVar(value="Zoo State: Waiting for updates...")
+zoo_state_label = ttk.Label(
+    online_tab,
+    textvariable=zoo_state_var,
+    font=("Segoe UI", 9),
+    justify="left"
+)
+zoo_state_label.pack(anchor="w", padx=10, pady=(4, 10))
 
 def update_connection_info_now():
-    """Refresh connection info asynchronously and update the UI safely."""
     def on_info(local, public, port):
         online_tab.after(0, lambda: (
             local_ip_var.set(f"Local IP: {local}"),
@@ -2430,7 +2414,6 @@ def refresh_connection_info():
 refresh_connection_info()
 
 def update_client_list(clients):
-    """Update the connected clients list in the UI."""
     clients_listbox.delete(0, tk.END)
     if not clients:
         clients_listbox.insert(tk.END, "(No connected clients)")
@@ -2440,9 +2423,14 @@ def update_client_list(clients):
 
 online_manager.set_client_update_callback(update_client_list)
 
+def update_zoo_state_ui(diff):
+    summary = " | ".join(f"{k.capitalize()}: {v}" for k, v in diff.items())
+    zoo_state_var.set(f"Zoo State: {summary}")
+
+state_manager.set_ui_callback(update_zoo_state_ui)
+
 update_connection_info_now()
 
-# ---------------- UI Helper functions ----------------
 def refresh_tree():
     for row in mods_tree.get_children():
         mods_tree.delete(row)
@@ -2480,7 +2468,6 @@ def refresh_tree():
     refresh_bundles_list()
 
 def sort_tree_by(column):
-    """Sort the mods tree by a given column."""
     if sort_state["column"] == column:
         sort_state["reverse"] = not sort_state["reverse"]
     else:
@@ -2634,13 +2621,11 @@ def restore_selection(mod_name):
             break
 
 def save_tree_state(tree):
-    """Save selection and scroll position for a Treeview."""
     sel = tree.selection()
     first_visible = tree.index(tree.identify_row(0)) if tree.get_children() else 0
     return {"sel": sel, "first_visible": first_visible}
 
 def restore_tree_state(tree, state):
-    """Restore selection and scroll position for a Treeview."""
     if not state:
         return
     sel = state.get("sel")
@@ -2689,7 +2674,7 @@ def inspect_selected_mod():
 
     dlg = tk.Toplevel(root)
     dlg.title(f"Inspect: {mod}")
-    dlg.geometry("700x500")
+    dlg.geometry("700x700")
 
     frame = ttk.Frame(dlg, padding=8)
     frame.pack(fill=tk.BOTH, expand=True)
@@ -2792,7 +2777,6 @@ def show_mod_details():
 
     ttk.Button(frame, text="Close", command=dlg.destroy).pack(pady=8)
 
-# ---------------- Bundles UI callbacks ----------------
 def refresh_bundles_list():
     bundle_list.delete(0, tk.END)
     for name, mods in get_bundles():
@@ -2936,15 +2920,12 @@ def on_export_bundle_as_mod():
         return
     export_bundle_as_mod_ui(name)
 
-# ---------------- Status ----------------
 def update_status():
     status_label.config(text=f"ZT2 path: {GAME_PATH or '(not set)'} | {enabled_count()} mods enabled")
 
-# ---------------- Bindings & Start ----------------
 search_var.trace_add('write', lambda *_: filter_tree())
 
 def filter_tree(*_):
-    """Filter mods in the treeview based on search input."""
     query = search_var.get().strip().lower()
 
     for row in mods_tree.get_children():
@@ -3000,7 +2981,6 @@ if not hasattr(root, "_watcher_started"):
     watch_mods(root, refresh_tree, interval=3)
     root._watcher_started = True
 
-# ---------------- Run ----------------
 if __name__ == '__main__':
 
     if not GAME_PATH:
