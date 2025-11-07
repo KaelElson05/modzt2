@@ -17,6 +17,14 @@ from watchdog.observers import Observer
 
 _PORT = 5000
 
+def set_port(port: int):
+    global _PORT
+    if isinstance(port, int) and 1 <= port <= 65535:
+        _PORT = port
+
+def get_port() -> int:
+    return _PORT
+
 _RUNNING = False
 _SERVER: Optional[socket.socket] = None
 _OBSERVER: Optional[Observer] = None
@@ -96,8 +104,11 @@ def get_connection_info(callback: Optional[Callable[[str, str, int], None]] = No
     else:
         return _work()
 
-def start_host(password: Optional[str] = None) -> bool:
-    global _SERVER, _RUNNING, _SESSION_KEY, _SALT, _SIGNING_ENABLED
+def start_host(password: Optional[str] = None, port: Optional[int] = None) -> bool:
+    global _SERVER, _RUNNING, _SESSION_KEY, _SALT, _SIGNING_ENABLED, _PORT
+    if port is not None:
+        set_port(port)
+
     if _RUNNING:
         print("[Online] Server already running.")
         return True
@@ -168,6 +179,9 @@ def _client_handler(conn: socket.socket, addr: Tuple[str, int]):
             if not line:
                 break
             msg = line.decode("utf-8", errors="ignore").strip()
+            if msg == "JOIN":
+                print(f"[Online] JOIN received from {addr}")
+                continue
 
     except Exception as e:
         if _RUNNING:
@@ -247,12 +261,13 @@ def push_state_update(diff: dict):
     except Exception as e:
         print(f"[Online] push_state_update error: {e}")
 
-def join_session(ip: str) -> Optional[socket.socket]:
+def join_session(ip: str, port: Optional[int] = None) -> Optional[socket.socket]:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((ip, _PORT))
+        target_port = port if isinstance(port, int) and 1 <= port <= 65535 else _PORT
+        sock.connect((ip, target_port))
         threading.Thread(target=_listen_to_host, args=(sock,), daemon=True).start()
-        print(f"[Online] Connected to host at {ip}:{_PORT}")
+        print(f"[Online] Connected to host at {ip}:{target_port}")
         return sock
     except Exception as e:
         print(f"[Online] Join failed: {e}")
@@ -265,6 +280,8 @@ def _recv_line(sock: socket.socket) -> Optional[bytes]:
         if not ch:
             return None
         if ch == b"\n":
+            if buf.endswith(b"\r"):
+                buf[:] = buf[:-1]
             return bytes(buf)
         buf.extend(ch)
 

@@ -493,17 +493,14 @@ def join_session_dialog():
             return
 
     try:
-        # Try to use explicit port if your online_manager supports it,
-        # otherwise fall back to the default call.
         sock = None
         if port is not None and hasattr(online_manager, "join_session"):
             try:
                 sock = online_manager.join_session(host, port)
             except TypeError:
-                # API is join_session(host) only
                 sock = online_manager.join_session(host)
         else:
-            sock = online_manager.join_session(host)
+            sock = online_manager.join_session(host, port) if port is not None else online_manager.join_session(host)
 
         endpoint = f"{host}:{port}" if port else host
         if sock:
