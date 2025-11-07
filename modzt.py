@@ -80,7 +80,7 @@ if GAME_PATH and os.path.isdir(GAME_PATH):
         online_manager.ZT2_PATH = ZT2_EXE
         print(f"[Online] ZT2 path registered: {ZT2_EXE}")
     else:
-        print("[Online] Warning: zt2.exe not found in configured path.")
+        print("[Online] Warning: zt.exe not found in configured path.")
 else:
     online_manager.ZT2_PATH = None
     print("[Online] ZT2 path not yet set; will register once chosen.")
@@ -142,9 +142,9 @@ def load_settings():
     except Exception:
         return DEFAULT_SETTINGS.copy()
     
-def save_settings(settings):
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=4)
+def save_settings(s):
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(s, f, indent=4)
 
 def auto_detect_zt1_installation():
     import winreg
@@ -478,24 +478,46 @@ def host_session():
         messagebox.showerror("Error", f"Failed to host session:\n{e}")
 
 def join_session_dialog():
-    ip = simpledialog.askstring("Join Session", "Enter host IP address:")
-    if not ip:
+    ip_text = simpledialog.askstring("Join Session", "Enter host (IP or host:port):")
+    if not ip_text:
         return
 
+    host = ip_text.strip()
+    port = None
+    if ":" in host:
+        host, port_str = host.rsplit(":", 1)
+        try:
+            port = int(port_str)
+        except ValueError:
+            messagebox.showerror("Connection Error", f"Invalid port: {port_str}")
+            return
+
     try:
-        sock = online_manager.join_session(ip)
-        if sock:
-            messagebox.showinfo("Connected", f"Connected to host at {ip}.")
-            status_var.set("Status: Connected to host.")
-            global _client_socket
-            _client_socket = sock
-            log(f"[Online] Connected to host {ip}", log_text)
+        # Try to use explicit port if your online_manager supports it,
+        # otherwise fall back to the default call.
+        sock = None
+        if port is not None and hasattr(online_manager, "join_session"):
+            try:
+                sock = online_manager.join_session(host, port)
+            except TypeError:
+                # API is join_session(host) only
+                sock = online_manager.join_session(host)
         else:
-            messagebox.showerror("Connection Error", f"Could not connect to {ip}.")
+            sock = online_manager.join_session(host)
+
+        endpoint = f"{host}:{port}" if port else host
+        if sock:
+            _client_socket = sock
+            status_var.set("Status: Connected to host.")
+            messagebox.showinfo("Connected", f"Connected to host at {endpoint}.")
+            log(f"[Online] Connected to host {endpoint}", log_text)
+        else:
             status_var.set("Status: Connection failed.")
-            log(f"[Online] Connection failed to {ip}", log_text)
+            messagebox.showerror("Connection Error", f"Could not connect to {endpoint}.")
+            log(f"[Online] Connection failed to {endpoint}", log_text)
+
     except Exception as e:
-        messagebox.showerror("Connection Error", f"Could not connect to {ip}\n\n{e}")
+        messagebox.showerror("Connection Error", f"Could not connect to {host}" + (f":{port}" if port else "") + f"\n\n{e}")
         status_var.set(f"Status: Error connecting — {e}")
         log(f"[Online] Connection error: {e}", log_text)
 
@@ -687,6 +709,9 @@ def set_game_path(lbl_widget=None, status_widget=None):
     refresh_tree()
 
 def launch_game(params=None):
+    settings = load_settings()
+    game_path = settings.get("game_path")
+
     if not GAME_PATH:
         messagebox.showerror("Error", "Set game path first!")
         return
@@ -793,6 +818,68 @@ def file_hash(path):
         return h.hexdigest()
     except Exception:
         return None
+    
+def backup_mods():
+    if not GAME_PATH:
+        messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
+        return
+
+    backup_dir = filedialog.askdirectory(title="Select backup destination")
+    if not backup_dir:
+        return
+
+    backup_name = f"ZT2_ModBackup_{time.strftime('%Y%m%d_%H%M%S')}.zip"
+    backup_path = os.path.join(backup_dir, backup_name)
+
+    try:
+        with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for folder in [GAME_PATH, mods_disabled_dir()]:
+                if not os.path.isdir(folder):
+                    continue
+                for f in os.listdir(folder):
+                    if f.lower().endswith((".z2f", ".zip")):
+                        fp = os.path.join(folder, f)
+                        arcname = os.path.join("Enabled" if folder == GAME_PATH else "Disabled", f)
+                        zf.write(fp, arcname)
+        messagebox.showinfo("Backup Complete", f"Mods backed up to:\n{backup_path}")
+        log(f"Created backup: {backup_path}", text_widget=log_text)
+    except Exception as e:
+        messagebox.showerror("Backup Error", str(e))
+        log(f"Backup failed: {e}", text_widget=log_text)
+
+def restore_mods():
+    if not GAME_PATH:
+        messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
+        return
+
+    zip_path = filedialog.askopenfilename(
+        title="Select Mod Backup ZIP",
+        filetypes=[("Zip Files", "*.zip")]
+    )
+    if not zip_path:
+        return
+
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            temp_extract = os.path.join(CONFIG_DIR, "_restore_temp")
+            os.makedirs(temp_extract, exist_ok=True)
+            zf.extractall(temp_extract)
+
+            enabled_dir = os.path.join(temp_extract, "Enabled")
+            disabled_dir = os.path.join(temp_extract, "Disabled")
+
+            for src, dest in [(enabled_dir, GAME_PATH), (disabled_dir, mods_disabled_dir())]:
+                if os.path.isdir(src):
+                    for f in os.listdir(src):
+                        shutil.copy2(os.path.join(src, f), os.path.join(dest, f))
+
+        messagebox.showinfo("Restore Complete", "Mods restored successfully!")
+        log("Mods restored from backup", text_widget=log_text)
+        shutil.rmtree(temp_extract, ignore_errors=True)
+        refresh_tree()
+    except Exception as e:
+        messagebox.showerror("Restore Error", str(e))
+        log(f"Restore failed: {e}", text_widget=log_text)
 
 def detect_existing_mods(cursor=None, conn=None):
     if not GAME_PATH:
@@ -1037,7 +1124,6 @@ def watch_mods(root, refresh_func, interval=5):
                     time.sleep(interval)
                     continue
                 found = set()
-                ... 
             except Exception as e:
                 print("Watcher error:", e)
                 time.sleep(interval)
@@ -1066,6 +1152,83 @@ def watch_mods(root, refresh_func, interval=5):
                 last_snapshot = found
             time.sleep(interval)
     threading.Thread(target=worker, daemon=True).start()
+
+def bundle_create_dialog():
+    dlg = tk.Toplevel(root)
+    dlg.title("Create Bundle")
+    dlg.geometry("420x500")
+    dlg.transient(root)
+    dlg.grab_set()
+
+    ttk.Label(dlg, text="Bundle name:").pack(anchor='w', padx=8, pady=(8, 2))
+    name_var = tk.StringVar()
+    ttk.Entry(dlg, textvariable=name_var).pack(fill=tk.X, padx=8)
+
+    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w', padx=8, pady=(8, 2))
+    mods_listbox = tk.Listbox(dlg, selectmode=tk.MULTIPLE, height=16)
+    mods_listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+
+    cursor.execute("SELECT name FROM mods ORDER BY name")
+    mods_all = [r[0] for r in cursor.fetchall()]
+    for m in mods_all:
+        mods_listbox.insert(tk.END, m)
+
+    def _do_create():
+        bname = name_var.get().strip()
+        sel = mods_listbox.curselection()
+        selected = [mods_all[i] for i in sel]
+        if not bname or not selected:
+            messagebox.showerror("Invalid", "Provide a name and select at least one mod.", parent=dlg)
+            return
+        ok = create_bundle(bname, selected)
+        if not ok:
+            messagebox.showerror("Error", "Bundle name already exists or invalid.", parent=dlg)
+            return
+        dlg.destroy()
+        refresh_bundles_list()
+        log(f"Created bundle '{bname}' with {len(selected)} mods.", log_text)
+
+    btnrow = ttk.Frame(dlg, padding=6)
+    btnrow.pack(fill=tk.X)
+    ttk.Button(btnrow, text="Create", command=_do_create, bootstyle="success").pack(side=tk.RIGHT, padx=4)
+    ttk.Button(btnrow, text="Cancel", command=dlg.destroy, bootstyle="secondary").pack(side=tk.RIGHT)
+
+def bundle_apply():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    apply_bundle(name, text_widget=log_text)
+    refresh_bundle_preview()
+    refresh_tree()
+
+def bundle_delete():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    if messagebox.askyesno("Delete Bundle", f"Delete bundle '{name}'?"):
+        delete_bundle(name)
+        refresh_bundles_list()
+        log(f"Deleted bundle: {name}", log_text)
+
+def bundle_export_json():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    export_bundle_as_json(name)
+
+def bundle_import_json():
+    import_bundle_from_json()
+    refresh_bundles_list()
+
+def bundle_export_z2f():
+    name = _selected_bundle_name()
+    if not name or name.startswith("("):
+        messagebox.showinfo("Select", "Select a bundle first.")
+        return
+    export_bundle_as_mod_ui(name)
 
 def create_bundle(bundle_name, mod_list):
     if not bundle_name or not mod_list:
@@ -1419,15 +1582,14 @@ game_menu_btn.pack(side=tk.LEFT, padx=4)
 mods_menu_btn = ttk.Menubutton(toolbar, text="Mods", bootstyle="info-outline")
 mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
 mods_menu.add_command(label="Export Load Order", command=export_load_order)
-mods_menu.add_command(label="Backup Mods", command=lambda: backup_mods)
-mods_menu.add_command(label="Restore Mods", command=lambda: restore_mods)
+mods_menu.add_command(label="Backup Mods",  command=backup_mods)
+mods_menu.add_command(label="Restore Mods", command=restore_mods)
 mods_menu_btn["menu"] = mods_menu
 mods_menu_btn.pack(side=tk.LEFT, padx=4)
 
 tools_menu_btn = ttk.Menubutton(toolbar, text="Tools", bootstyle="info-outline")
 tools_menu = tk.Menu(tools_menu_btn, tearoff=0)
 tools_menu.add_command(label="Validate Mods", command=lambda: messagebox.showinfo("Validate Mods", "All mods validated successfully."))
-tools_menu.add_separator()
 tools_menu.add_command(label="Clean Temporary Files", command=lambda: messagebox.showinfo("Cleanup", "Temporary files cleaned up."))
 tools_menu_btn["menu"] = tools_menu
 tools_menu_btn.pack(side=tk.LEFT, padx=4)
@@ -2122,21 +2284,27 @@ def update_bundle_toolbar_state():
 
 bundle_list.bind("<<ListboxSelect>>", lambda _: update_bundle_toolbar_state())
 
-bundle_btns = ttk.Frame(bundles_tab, padding=6)
-bundle_btns.pack(side=tk.BOTTOM, fill=tk.X)
-
-create_btn = ttk.Button(bundle_btns, text="Create", command=lambda: bundle_create_dialog, bootstyle="success")
+create_btn = ttk.Button(bundle_btns, text="Create", bootstyle="success", command=bundle_create_dialog)
 create_btn.pack(side=tk.LEFT, padx=4)
 
-apply_btn = ttk.Button(bundle_btns, text="Apply", command=lambda: bundle_apply, bootstyle="primary", state="disabled")
+apply_btn = ttk.Button(bundle_btns, text="Apply", bootstyle="primary", command=bundle_apply, state="disabled")
 apply_btn.pack(side=tk.LEFT, padx=4)
 
-delete_btn = ttk.Button(bundle_btns, text="Delete", command=lambda: bundle_delete, bootstyle="info", state="disabled")
+delete_btn = ttk.Button(bundle_btns, text="Delete", bootstyle="info", command=bundle_delete, state="disabled")
 delete_btn.pack(side=tk.LEFT, padx=4)
 
-ttk.Button(bundle_btns, text="Export JSON", command=lambda: bundle_export_json()).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Import JSON", command=lambda: bundle_import_json()).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", command=lambda: bundle_export_z2f(), bootstyle="success").pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Export JSON", command=bundle_export_json).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Import JSON", command=bundle_import_json).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", bootstyle="success",
+           command=bundle_export_z2f).pack(side=tk.LEFT, padx=4)
+
+def update_bundle_toolbar_state():
+    sel = bundle_list.curselection()
+    has_selection = bool(sel) and not bundle_list.get(sel[0]).startswith("(")
+    apply_btn.config(state="normal" if has_selection else "disabled")
+    delete_btn.config(state="normal" if has_selection else "disabled")
+
+bundle_list.bind("<<ListboxSelect>>", lambda _: (refresh_bundle_preview(), update_bundle_toolbar_state()))
 
 preview_btns = ttk.Frame(bundle_preview)
 preview_btns.pack(fill=tk.X, pady=(6, 0))
@@ -2229,83 +2397,6 @@ def _bundle_context_menu(event):
 
 bundle_list.bind("<Button-3>", _bundle_context_menu)
 
-def bundle_create_dialog():
-    dlg = tk.Toplevel(root)
-    dlg.title("Create Bundle")
-    dlg.geometry("420x500")
-    dlg.transient(root)
-    dlg.grab_set()
-
-    ttk.Label(dlg, text="Bundle name:").pack(anchor='w', padx=8, pady=(8, 2))
-    name_var = tk.StringVar()
-    ttk.Entry(dlg, textvariable=name_var).pack(fill=tk.X, padx=8)
-
-    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w', padx=8, pady=(8, 2))
-    mods_listbox = tk.Listbox(dlg, selectmode=tk.MULTIPLE, height=16)
-    mods_listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
-
-    cursor.execute("SELECT name FROM mods ORDER BY name")
-    mods_all = [r[0] for r in cursor.fetchall()]
-    for m in mods_all:
-        mods_listbox.insert(tk.END, m)
-
-    def _do_create():
-        bname = name_var.get().strip()
-        sel = mods_listbox.curselection()
-        selected = [mods_all[i] for i in sel]
-        if not bname or not selected:
-            messagebox.showerror("Invalid", "Provide a name and select at least one mod.", parent=dlg)
-            return
-        ok = create_bundle(bname, selected)
-        if not ok:
-            messagebox.showerror("Error", "Bundle name already exists or invalid.", parent=dlg)
-            return
-        dlg.destroy()
-        refresh_bundles_list()
-        log(f"Created bundle '{bname}' with {len(selected)} mods.", log_text)
-
-    btnrow = ttk.Frame(dlg, padding=6)
-    btnrow.pack(fill=tk.X)
-    ttk.Button(btnrow, text="Create", command=_do_create, bootstyle="success").pack(side=tk.RIGHT, padx=4)
-    ttk.Button(btnrow, text="Cancel", command=dlg.destroy, bootstyle="secondary").pack(side=tk.RIGHT)
-
-def bundle_apply():
-    name = _selected_bundle_name()
-    if not name or name.startswith("("):
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    apply_bundle(name, text_widget=log_text)
-    refresh_bundle_preview()
-    refresh_tree()
-
-def bundle_delete():
-    name = _selected_bundle_name()
-    if not name or name.startswith("("):
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    if messagebox.askyesno("Delete Bundle", f"Delete bundle '{name}'?"):
-        delete_bundle(name)
-        refresh_bundles_list()
-        log(f"Deleted bundle: {name}", log_text)
-
-def bundle_export_json():
-    name = _selected_bundle_name()
-    if not name or name.startswith("("):
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    export_bundle_as_json(name)
-
-def bundle_import_json():
-    import_bundle_from_json()
-    refresh_bundles_list()
-
-def bundle_export_z2f():
-    name = _selected_bundle_name()
-    if not name or name.startswith("("):
-        messagebox.showinfo("Select", "Select a bundle first.")
-        return
-    export_bundle_as_mod_ui(name)
-
 def bundle_enable_all():
     name = _selected_bundle_name()
     if not name or name.startswith("("):
@@ -2339,11 +2430,6 @@ log_text.pack(fill=tk.BOTH, expand=True)
 
 status_frame = ttk.Frame(root)
 status_frame.pack(side=tk.BOTTOM, fill=tk.X)
-
-status_label = ttk.Label(status_frame, text=f"ZT2 path: {GAME_PATH or '(not set)'} | {enabled_count()} mods enabled", anchor='w')
-status_label.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
-
-root.status_label = status_label
 
 online_tab = ttk.Frame(notebook, padding=10)
 notebook.add(online_tab, text="Online")
@@ -2404,6 +2490,22 @@ def update_connection_info_now():
             port_var.set("Port: —")
         ))
 
+def update_connection_info_now():
+    def on_info(local, public, port):
+        online_tab.after(0, lambda: (
+            local_ip_var.set(f"Local IP: {local}"),
+            public_ip_var.set(f"Public IP: {public}"),
+            port_var.set(f"Port: {port}")
+        ))
+    try:
+        online_manager.get_connection_info(callback=on_info)
+    except Exception as e:
+        online_tab.after(0, lambda: (
+            local_ip_var.set("Local IP: Error"),
+            public_ip_var.set(f"Public IP: {e}"),
+            port_var.set("Port: —")
+        ))
+
 def refresh_connection_info():
     def loop():
         while True:
@@ -2412,6 +2514,7 @@ def refresh_connection_info():
     threading.Thread(target=loop, daemon=True).start()
 
 refresh_connection_info()
+update_connection_info_now()
 
 def update_client_list(clients):
     clients_listbox.delete(0, tk.END)
@@ -2847,68 +2950,6 @@ def on_export_bundle():
     if not name:
         return
     export_bundle_as_json(name)
-
-def backup_mods():
-    if not GAME_PATH:
-        messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
-        return
-
-    backup_dir = filedialog.askdirectory(title="Select backup destination")
-    if not backup_dir:
-        return
-
-    backup_name = f"ZT2_ModBackup_{time.strftime('%Y%m%d_%H%M%S')}.zip"
-    backup_path = os.path.join(backup_dir, backup_name)
-
-    try:
-        with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for folder in [GAME_PATH, mods_disabled_dir()]:
-                if not os.path.isdir(folder):
-                    continue
-                for f in os.listdir(folder):
-                    if f.lower().endswith((".z2f", ".zip")):
-                        fp = os.path.join(folder, f)
-                        arcname = os.path.join("Enabled" if folder == GAME_PATH else "Disabled", f)
-                        zf.write(fp, arcname)
-        messagebox.showinfo("Backup Complete", f"Mods backed up to:\n{backup_path}")
-        log(f"Created backup: {backup_path}", text_widget=log_text)
-    except Exception as e:
-        messagebox.showerror("Backup Error", str(e))
-        log(f"Backup failed: {e}", text_widget=log_text)
-
-def restore_mods():
-    if not GAME_PATH:
-        messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
-        return
-
-    zip_path = filedialog.askopenfilename(
-        title="Select Mod Backup ZIP",
-        filetypes=[("Zip Files", "*.zip")]
-    )
-    if not zip_path:
-        return
-
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            temp_extract = os.path.join(CONFIG_DIR, "_restore_temp")
-            os.makedirs(temp_extract, exist_ok=True)
-            zf.extractall(temp_extract)
-
-            enabled_dir = os.path.join(temp_extract, "Enabled")
-            disabled_dir = os.path.join(temp_extract, "Disabled")
-
-            for src, dest in [(enabled_dir, GAME_PATH), (disabled_dir, mods_disabled_dir())]:
-                if os.path.isdir(src):
-                    for f in os.listdir(src):
-                        shutil.copy2(os.path.join(src, f), os.path.join(dest, f))
-
-        messagebox.showinfo("Restore Complete", "Mods restored successfully!")
-        log("Mods restored from backup", text_widget=log_text)
-        shutil.rmtree(temp_extract, ignore_errors=True)
-        refresh_tree()
-    except Exception as e:
-        messagebox.showerror("Restore Error", str(e))
-        log(f"Restore failed: {e}", text_widget=log_text)
 
 def on_import_bundle():
     import_bundle_from_json()
