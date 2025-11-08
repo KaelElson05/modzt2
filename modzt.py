@@ -92,12 +92,15 @@ if os.path.isfile(ZT1_MOD_DIR_FILE):
     with open(ZT1_MOD_DIR_FILE, "r", encoding="utf-8") as f:
         ZT1_MOD_DIR = f.read().strip()
 
+
 def get_zt2_saves_dir():
     appdata = os.environ.get("APPDATA")
     if not appdata:
         return None
-    p = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "Saved")
+    p = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2",
+                     "Default Profile", "Saved")
     return p if os.path.isdir(p) else None
+
 
 COMMON_ZT2_PATHS = [
     r"C:\Program Files (x86)\Microsoft Games\Zoo Tycoon 2",
@@ -115,24 +118,12 @@ DEFAULT_SETTINGS = {
     "geometry": "1200x700+100+100"
 }
 
+
 def open_mods_folder():
     path = get_game_path()
     if path:
         os.startfile(path)
 
-def mods_enabled_dir():
-    if not GAME_PATH:
-        return None
-    path = os.path.join(GAME_PATH, "mods_enabled")
-    os.makedirs(path, exist_ok=True)
-    return path
-
-def mods_disabled_dir():
-    if not GAME_PATH:
-        return None
-    path = os.path.join(GAME_PATH, "mods_disabled")
-    os.makedirs(path, exist_ok=True)
-    return path
 
 def resource_path(relative_path):
     try:
@@ -140,6 +131,7 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
+
 
 def load_settings():
     if not os.path.exists(SETTINGS_FILE):
@@ -154,10 +146,12 @@ def load_settings():
         return data
     except Exception:
         return DEFAULT_SETTINGS.copy()
-    
+
+
 def save_settings(s):
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(s, f, indent=4)
+
 
 def auto_detect_zt1_installation():
     import winreg
@@ -174,7 +168,8 @@ def auto_detect_zt1_installation():
     for key in possible_keys:
         try:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as regkey:
-                install_dir, _ = winreg.QueryValueEx(regkey, "InstallationDirectory")
+                install_dir, _ = winreg.QueryValueEx(regkey,
+                                                     "InstallationDirectory")
                 exe = os.path.join(install_dir, "zoo.exe")
                 if os.path.isfile(exe):
                     return install_dir
@@ -194,6 +189,7 @@ def auto_detect_zt1_installation():
 
     return None
 
+
 def auto_detect_zt2_installation():
     import winreg
 
@@ -209,7 +205,8 @@ def auto_detect_zt2_installation():
     for key in possible_keys:
         try:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as regkey:
-                install_dir, _ = winreg.QueryValueEx(regkey, "InstallationDirectory")
+                install_dir, _ = winreg.QueryValueEx(regkey,
+                                                     "InstallationDirectory")
                 exe = os.path.join(install_dir, "zt.exe")
                 if os.path.isfile(exe):
                     return install_dir
@@ -228,6 +225,7 @@ def auto_detect_zt2_installation():
                 return root
 
     return None
+
 
 sort_state = {"column": "Name", "reverse": False}
 ui_mode = {"compact": False}
@@ -277,34 +275,46 @@ CREATE TABLE IF NOT EXISTS bundle_mods (
 """)
 conn.commit()
 
+
 def ensure_category_column():
     cursor.execute("PRAGMA table_info(mods)")
     mods_cols = [col[1] for col in cursor.fetchall()]
     if "category" not in mods_cols:
-        cursor.execute("ALTER TABLE mods ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+        cursor.execute(
+            "ALTER TABLE mods ADD COLUMN category TEXT DEFAULT 'Uncategorized'"
+        )
 
     cursor.execute("PRAGMA table_info(zt1_mods)")
     zt1_cols = [col[1] for col in cursor.fetchall()]
     if "category" not in zt1_cols:
-        cursor.execute("ALTER TABLE zt1_mods ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+        cursor.execute(
+            "ALTER TABLE zt1_mods ADD COLUMN category TEXT DEFAULT 'Uncategorized'"
+        )
 
     conn.commit()
+
 
 conn = sqlite3.connect(DB_FILE)
 cursor = conn.cursor()
 ensure_category_column()
+
 
 def ensure_db_schema():
     for table in ("mods", "zt1_mods"):
         cursor.execute(f"PRAGMA table_info({table})")
         cols = [c[1] for c in cursor.fetchall()]
         if "category" not in cols:
-            cursor.execute(f"ALTER TABLE {table} ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+            cursor.execute(
+                f"ALTER TABLE {table} ADD COLUMN category TEXT DEFAULT 'Uncategorized'"
+            )
         if "tags" not in cols:
-            cursor.execute(f"ALTER TABLE {table} ADD COLUMN tags TEXT DEFAULT ''")
+            cursor.execute(
+                f"ALTER TABLE {table} ADD COLUMN tags TEXT DEFAULT ''")
     conn.commit()
 
+
 ensure_db_schema()
+
 
 def log(msg, text_widget=None):
     timestamp = time.strftime("%H:%M:%S")
@@ -316,9 +326,23 @@ def log(msg, text_widget=None):
         text_widget.configure(state="disabled")
         text_widget.see(tk.END)
 
+
+def mods_enabled_dir():
+    base = os.path.join(os.getenv("APPDATA"), "ModZT", "mods_enabled")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def mods_disabled_dir():
+    base = os.path.join(os.getenv("APPDATA"), "ModZT", "mods_disabled")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
 def save_game_path(p):
     with open(GAME_PATH_FILE, "w", encoding="utf-8") as f:
         f.write(p)
+
 
 def get_game_path():
     global GAME_PATH, settings
@@ -334,15 +358,18 @@ def get_game_path():
             json.dump(settings, f, indent=4)
         return GAME_PATH
     else:
-        messagebox.showwarning("Path Not Set", "Please select your Zoo Tycoon 2 folder first.")
+        messagebox.showwarning(
+            "Path Not Set", "Please select your Zoo Tycoon 2 folder first.")
         return None
-    
+
+
 def zt1_mods_disabled_dir():
     if ZT1_MOD_DIR:
         return os.path.join(ZT1_MOD_DIR, "_disabled")
     elif ZT1_PATH:
         return os.path.join(ZT1_PATH, "dlupdates_disabled")
     return None
+
 
 def detect_existing_zt1_mods():
     if not ZT1_PATH:
@@ -361,19 +388,23 @@ def detect_existing_zt1_mods():
             scanned[f] = enabled
 
     for name, enabled in scanned.items():
-        cursor.execute("SELECT COUNT(*) FROM zt1_mods WHERE name=?", (name,))
+        cursor.execute("SELECT COUNT(*) FROM zt1_mods WHERE name=?", (name, ))
         exists = cursor.fetchone()[0]
         if exists == 0:
-            cursor.execute("INSERT INTO zt1_mods (name, enabled) VALUES (?, ?)", (name, enabled))
+            cursor.execute(
+                "INSERT INTO zt1_mods (name, enabled) VALUES (?, ?)",
+                (name, enabled))
         else:
-            cursor.execute("UPDATE zt1_mods SET enabled=? WHERE name=?", (enabled, name))
+            cursor.execute("UPDATE zt1_mods SET enabled=? WHERE name=?",
+                           (enabled, name))
     conn.commit()
 
     cursor.execute("SELECT name FROM zt1_mods")
-    for (name,) in cursor.fetchall():
+    for (name, ) in cursor.fetchall():
         if name not in scanned:
-            cursor.execute("DELETE FROM zt1_mods WHERE name=?", (name,))
+            cursor.execute("DELETE FROM zt1_mods WHERE name=?", (name, ))
     conn.commit()
+
 
 def check_for_updates():
     try:
@@ -387,17 +418,20 @@ def check_for_updates():
 
         if latest_version > APP_VERSION:
             if messagebox.askyesno(
-                "Update Available",
-                f"A new version ({latest_version}) is available!\n\n"
-                f"You're using {APP_VERSION}.\n\n"
-                "Would you like to open the release page?"
-            ):
+                    "Update Available",
+                    f"A new version ({latest_version}) is available!\n\n"
+                    f"You're using {APP_VERSION}.\n\n"
+                    "Would you like to open the release page?"):
                 webbrowser.open(release_url)
         else:
-            messagebox.showinfo("Up to Date", f"You're running the latest version ({APP_VERSION}).")
+            messagebox.showinfo(
+                "Up to Date",
+                f"You're running the latest version ({APP_VERSION}).")
 
     except requests.RequestException as e:
-        messagebox.showerror("Update Check Failed", f"Could not contact GitHub:\n{e}")
+        messagebox.showerror("Update Check Failed",
+                             f"Could not contact GitHub:\n{e}")
+
 
 def get_local_ip():
     try:
@@ -408,6 +442,7 @@ def get_local_ip():
         return ip
     except:
         return "Unknown"
+
 
 def stop_host():
     try:
@@ -423,9 +458,12 @@ def stop_host():
 
     except Exception as e:
         print(f"[Online] Stop error: {e}")
-        online_tab.after(0, lambda: status_var.set(f"Status: Stop error — {e}"))
+        online_tab.after(0,
+                         lambda: status_var.set(f"Status: Stop error — {e}"))
+
 
 def refresh_connection_info():
+
     def loop():
         while True:
             local, public, port = online_manager.get_connection_info()
@@ -433,9 +471,12 @@ def refresh_connection_info():
             public_ip_var.set(f"Public IP: {public}")
             port_var.set(f"Port: {port}")
             time.sleep(5)
+
     threading.Thread(target=loop, daemon=True).start()
 
+
 refresh_connection_info()
+
 
 def host_session():
     try:
@@ -454,8 +495,10 @@ def host_session():
         status_var.set(f"Status: Error starting host — {e}")
         messagebox.showerror("Error", f"Failed to host session:\n{e}")
 
+
 def join_session_dialog():
-    ip_text = simpledialog.askstring("Join Session", "Enter host (IP or host:port):")
+    ip_text = simpledialog.askstring("Join Session",
+                                     "Enter host (IP or host:port):")
     if not ip_text:
         return
 
@@ -466,7 +509,8 @@ def join_session_dialog():
         try:
             port = int(port_str)
         except ValueError:
-            messagebox.showerror("Connection Error", f"Invalid port: {port_str}")
+            messagebox.showerror("Connection Error",
+                                 f"Invalid port: {port_str}")
             return
 
     try:
@@ -477,23 +521,30 @@ def join_session_dialog():
             except TypeError:
                 sock = online_manager.join_session(host)
         else:
-            sock = online_manager.join_session(host, port) if port is not None else online_manager.join_session(host)
+            sock = online_manager.join_session(
+                host, port
+            ) if port is not None else online_manager.join_session(host)
 
         endpoint = f"{host}:{port}" if port else host
         if sock:
             _client_socket = sock
             status_var.set("Status: Connected to host.")
-            messagebox.showinfo("Connected", f"Connected to host at {endpoint}.")
+            messagebox.showinfo("Connected",
+                                f"Connected to host at {endpoint}.")
             log(f"[Online] Connected to host {endpoint}", log_text)
         else:
             status_var.set("Status: Connection failed.")
-            messagebox.showerror("Connection Error", f"Could not connect to {endpoint}.")
+            messagebox.showerror("Connection Error",
+                                 f"Could not connect to {endpoint}.")
             log(f"[Online] Connection failed to {endpoint}", log_text)
 
     except Exception as e:
-        messagebox.showerror("Connection Error", f"Could not connect to {host}" + (f":{port}" if port else "") + f"\n\n{e}")
+        messagebox.showerror(
+            "Connection Error", f"Could not connect to {host}" +
+            (f":{port}" if port else "") + f"\n\n{e}")
         status_var.set(f"Status: Error connecting — {e}")
         log(f"[Online] Connection error: {e}", log_text)
+
 
 def monitor_game_crash(proc, game_name="ZT2", timeout=10):
     start_time = time.time()
@@ -507,7 +558,9 @@ def monitor_game_crash(proc, game_name="ZT2", timeout=10):
     except Exception as e:
         exit_code = -999
         with open(crash_log, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.datetime.now()}] Exception monitoring {game_name}: {e}\n")
+            f.write(
+                f"[{datetime.datetime.now()}] Exception monitoring {game_name}: {e}\n"
+            )
 
     elapsed = time.time() - start_time
     if exit_code != 0 or elapsed < timeout:
@@ -522,8 +575,8 @@ def monitor_game_crash(proc, game_name="ZT2", timeout=10):
             f"{game_name} Crash Detected",
             f"{game_name} may have crashed or closed unexpectedly.\n"
             f"Duration: {elapsed:.1f} seconds\n\n"
-            f"A crash log has been saved to:\n{crash_log}"
-        )
+            f"A crash log has been saved to:\n{crash_log}")
+
 
 def enable_zt1_mod(name, text_widget=None):
     if not ZT1_MOD_DIR or not os.path.isdir(ZT1_MOD_DIR):
@@ -542,11 +595,12 @@ def enable_zt1_mod(name, text_widget=None):
 
     try:
         shutil.move(src, dst)
-        cursor.execute("UPDATE zt1_mods SET enabled=1 WHERE name=?", (name,))
+        cursor.execute("UPDATE zt1_mods SET enabled=1 WHERE name=?", (name, ))
         conn.commit()
         log(f"Enabled ZT1 mod: {name}", text_widget)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to enable mod:\n{e}")
+
 
 def disable_zt1_mod(name, text_widget=None):
     if not ZT1_MOD_DIR or not os.path.isdir(ZT1_MOD_DIR):
@@ -565,58 +619,71 @@ def disable_zt1_mod(name, text_widget=None):
 
     try:
         shutil.move(src, dst)
-        cursor.execute("UPDATE zt1_mods SET enabled=0 WHERE name=?", (name,))
+        cursor.execute("UPDATE zt1_mods SET enabled=0 WHERE name=?", (name, ))
         conn.commit()
         log(f"Disabled ZT1 mod: {name}", text_widget)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to disable mod:\n{e}")
 
+
 def set_mod_category(mod_name, category, zt1=False):
     table = "zt1_mods" if zt1 else "mods"
-    cursor.execute(f"UPDATE {table} SET category=? WHERE name=?", (category, mod_name))
+    cursor.execute(f"UPDATE {table} SET category=? WHERE name=?",
+                   (category, mod_name))
     conn.commit()
+
 
 def get_mod_category(mod_name, zt1=False):
     table = "zt1_mods" if zt1 else "mods"
-    cursor.execute(f"SELECT category FROM {table} WHERE name=?", (mod_name,))
+    cursor.execute(f"SELECT category FROM {table} WHERE name=?", (mod_name, ))
     row = cursor.fetchone()
     return row[0] if row else "Uncategorized"
+
 
 def set_mod_tags(mod_name, tags, zt1=False):
     table = "zt1_mods" if zt1 else "mods"
     tags_str = ", ".join(sorted(set([t.strip() for t in tags if t.strip()])))
-    cursor.execute(f"UPDATE {table} SET tags=? WHERE name=?", (tags_str, mod_name))
+    cursor.execute(f"UPDATE {table} SET tags=? WHERE name=?",
+                   (tags_str, mod_name))
     conn.commit()
+
 
 def get_mod_tags(mod_name, zt1=False):
     table = "zt1_mods" if zt1 else "mods"
-    cursor.execute(f"SELECT tags FROM {table} WHERE name=?", (mod_name,))
+    cursor.execute(f"SELECT tags FROM {table} WHERE name=?", (mod_name, ))
     row = cursor.fetchone()
     return [t.strip() for t in row[0].split(",")] if row and row[0] else []
+
 
 def enabled_count():
     cursor.execute("SELECT COUNT(*) FROM mods WHERE enabled=1")
     return cursor.fetchone()[0]
 
+
 def get_zt2_photos_root():
     appdata = os.environ.get("APPDATA")
     if not appdata:
         return None
-    root = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2", "Default Profile", "HTML Photo Album")
+    root = os.path.join(appdata, "Microsoft Games", "Zoo Tycoon 2",
+                        "Default Profile", "HTML Photo Album")
     return root if os.path.isdir(root) else None
+
 
 def list_zt2_albums(root):
     albums = []
     for p in Path(root).glob("album*"):
         if p.is_dir():
             albums.append((p.name, str(p)))
+
     def _key(t):
         name = t[0]
         try:
             return int(name.replace("album", ""))
         except Exception:
             return 999999
+
     return sorted(albums, key=_key)
+
 
 def list_album_images(album_path):
     exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp")
@@ -626,19 +693,28 @@ def list_album_images(album_path):
     imgs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return imgs
 
+
 def set_dependencies(mod_name, dependencies):
-    cursor.execute("DELETE FROM mod_dependencies WHERE mod_name=?", (mod_name,))
+    cursor.execute("DELETE FROM mod_dependencies WHERE mod_name=?",
+                   (mod_name, ))
     for dep in dependencies:
-        cursor.execute("INSERT INTO mod_dependencies (mod_name, depends_on) VALUES (?, ?)", (mod_name, dep))
+        cursor.execute(
+            "INSERT INTO mod_dependencies (mod_name, depends_on) VALUES (?, ?)",
+            (mod_name, dep))
     conn.commit()
 
+
 def get_dependencies(mod_name):
-    cursor.execute("SELECT depends_on FROM mod_dependencies WHERE mod_name=?", (mod_name,))
+    cursor.execute("SELECT depends_on FROM mod_dependencies WHERE mod_name=?",
+                   (mod_name, ))
     return [r[0] for r in cursor.fetchall()]
 
+
 def get_dependents(target_mod):
-    cursor.execute("SELECT mod_name FROM mod_dependencies WHERE depends_on=?", (target_mod,))
+    cursor.execute("SELECT mod_name FROM mod_dependencies WHERE depends_on=?",
+                   (target_mod, ))
     return [r[0] for r in cursor.fetchall()]
+
 
 def get_system_theme():
     try:
@@ -654,19 +730,22 @@ def get_system_theme():
         elif platform.system() == "Darwin":
             result = subprocess.run(
                 ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True, text=True
-            )
+                capture_output=True,
+                text=True)
             return "dark" if "Dark" in result.stdout else "light"
 
         else:
-            result = subprocess.run(
-                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-                capture_output=True, text=True
-            )
+            result = subprocess.run([
+                "gsettings", "get", "org.gnome.desktop.interface",
+                "color-scheme"
+            ],
+                                    capture_output=True,
+                                    text=True)
             return "dark" if "dark" in result.stdout.lower() else "light"
 
     except Exception:
         return "dark"
+
 
 def set_game_path(lbl_widget=None, status_widget=None):
     global GAME_PATH
@@ -678,9 +757,11 @@ def set_game_path(lbl_widget=None, status_widget=None):
     if lbl_widget:
         lbl_widget.config(text=GAME_PATH)
     if status_widget:
-        status_widget.config(text=f"ZT2 path: {GAME_PATH} | {enabled_count()} mods enabled")
+        status_widget.config(
+            text=f"ZT2 path: {GAME_PATH} | {enabled_count()} mods enabled")
     log(f"Game path set: {GAME_PATH}", text_widget=log_text)
     refresh_tree()
+
 
 def launch_game(params=None):
     settings = load_settings()
@@ -706,13 +787,17 @@ def launch_game(params=None):
         proc = subprocess.Popen(cmd, cwd=GAME_PATH, shell=False)
         log("🎮 Launched Zoo Tycoon 2", text_widget=log_text)
 
-        threading.Thread(target=monitor_game_crash, args=(proc, "ZT2"), daemon=True).start()
+        threading.Thread(target=monitor_game_crash,
+                         args=(proc, "ZT2"),
+                         daemon=True).start()
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to launch ZT2: {e}")
 
+
 def mods_disabled_dir():
     return os.path.join(GAME_PATH, "Mods", "Disabled")
+
 
 def find_mod_file(mod_name):
     if not GAME_PATH:
@@ -724,6 +809,7 @@ def find_mod_file(mod_name):
     if os.path.isfile(p2):
         return p2
     return None
+
 
 def index_mod_files(cursor=None, conn=None, force=False):
     if cursor is None or conn is None:
@@ -777,11 +863,13 @@ def index_mod_files(cursor=None, conn=None, force=False):
             changed = True
 
             if mod_hash:
-                cursor.execute("UPDATE mods SET hash=? WHERE name=?", (mod_hash, f))
+                cursor.execute("UPDATE mods SET hash=? WHERE name=?",
+                               (mod_hash, f))
     if changed:
         conn.commit()
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
+
 
 def file_hash(path):
     h = hashlib.sha1()
@@ -792,7 +880,8 @@ def file_hash(path):
         return h.hexdigest()
     except Exception:
         return None
-    
+
+
 def backup_mods():
     if not GAME_PATH:
         messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
@@ -813,23 +902,25 @@ def backup_mods():
                 for f in os.listdir(folder):
                     if f.lower().endswith((".z2f")):
                         fp = os.path.join(folder, f)
-                        arcname = os.path.join("Enabled" if folder == GAME_PATH else "Disabled", f)
+                        arcname = os.path.join(
+                            "Enabled" if folder == GAME_PATH else "Disabled",
+                            f)
                         zf.write(fp, arcname)
-        messagebox.showinfo("Backup Complete", f"Mods backed up to:\n{backup_path}")
+        messagebox.showinfo("Backup Complete",
+                            f"Mods backed up to:\n{backup_path}")
         log(f"Created backup: {backup_path}", text_widget=log_text)
     except Exception as e:
         messagebox.showerror("Backup Error", str(e))
         log(f"Backup failed: {e}", text_widget=log_text)
+
 
 def restore_mods():
     if not GAME_PATH:
         messagebox.showerror("Error", "Set your Zoo Tycoon 2 path first.")
         return
 
-    zip_path = filedialog.askopenfilename(
-        title="Select Mod Backup ZIP",
-        filetypes=[("Zip Files", "*.zip")]
-    )
+    zip_path = filedialog.askopenfilename(title="Select Mod Backup ZIP",
+                                          filetypes=[("Zip Files", "*.zip")])
     if not zip_path:
         return
 
@@ -842,10 +933,12 @@ def restore_mods():
             enabled_dir = os.path.join(temp_extract, "Enabled")
             disabled_dir = os.path.join(temp_extract, "Disabled")
 
-            for src, dest in [(enabled_dir, GAME_PATH), (disabled_dir, mods_disabled_dir())]:
+            for src, dest in [(enabled_dir, GAME_PATH),
+                              (disabled_dir, mods_disabled_dir())]:
                 if os.path.isdir(src):
                     for f in os.listdir(src):
-                        shutil.copy2(os.path.join(src, f), os.path.join(dest, f))
+                        shutil.copy2(os.path.join(src, f),
+                                     os.path.join(dest, f))
 
         messagebox.showinfo("Restore Complete", "Mods restored successfully!")
         log("Mods restored from backup", text_widget=log_text)
@@ -854,6 +947,7 @@ def restore_mods():
     except Exception as e:
         messagebox.showerror("Restore Error", str(e))
         log(f"Restore failed: {e}", text_widget=log_text)
+
 
 def detect_existing_mods(cursor=None, conn=None):
     if not GAME_PATH:
@@ -881,18 +975,20 @@ def detect_existing_mods(cursor=None, conn=None):
             scanned[f] = (enabled, mtime)
 
     for mod_name, (enabled, mtime) in scanned.items():
-        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
+        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name, ))
         exists = cursor.fetchone()[0]
         if exists == 0:
-            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod_name, enabled))
+            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)",
+                           (mod_name, enabled))
         else:
-            cursor.execute("UPDATE mods SET enabled=? WHERE name=?", (enabled, mod_name))
+            cursor.execute("UPDATE mods SET enabled=? WHERE name=?",
+                           (enabled, mod_name))
     conn.commit()
 
     cursor.execute("SELECT name FROM mods")
-    for (name,) in cursor.fetchall():
+    for (name, ) in cursor.fetchall():
         if name not in scanned:
-            cursor.execute("DELETE FROM mods WHERE name=?", (name,))
+            cursor.execute("DELETE FROM mods WHERE name=?", (name, ))
     conn.commit()
 
     try:
@@ -908,20 +1004,20 @@ def detect_existing_mods(cursor=None, conn=None):
             log(f"Duplicate mods detected:\n{dup_text}", log_text)
             messagebox.showwarning(
                 "Duplicate Mods Detected",
-                f"The following mods have identical contents:\n\n{dup_text}"
-            )
+                f"The following mods have identical contents:\n\n{dup_text}")
     except sqlite3.OperationalError:
         pass
+
 
 def enable_mod(mod_name, text_widget=None):
     deps = get_dependencies(mod_name)
     for dep in deps:
-        cursor.execute("SELECT enabled FROM mods WHERE name=?", (dep,))
+        cursor.execute("SELECT enabled FROM mods WHERE name=?", (dep, ))
         row = cursor.fetchone()
         if not row or row[0] == 0:
             log(f"Enabling dependency: {dep}", text_widget)
             enable_mod(dep, text_widget)
-        
+
     if not mod_name or not GAME_PATH:
         return
     src = os.path.join(mods_disabled_dir(), mod_name)
@@ -935,30 +1031,34 @@ def enable_mod(mod_name, text_widget=None):
             return
     else:
         if not os.path.isfile(dst):
-            messagebox.showwarning("Not found", f"Mod file for {mod_name} not found on disk.")
+            messagebox.showwarning(
+                "Not found", f"Mod file for {mod_name} not found on disk.")
             return
-    cursor.execute("UPDATE mods SET enabled=1 WHERE name=?", (mod_name,))
+    cursor.execute("UPDATE mods SET enabled=1 WHERE name=?", (mod_name, ))
     conn.commit()
 
     for iid in mods_tree.get_children():
         vals = mods_tree.item(iid, "values")
         if vals and vals[0] == mod_name:
             mods_tree.item(iid, values=(vals[0], "Enabled", vals[2], vals[3]))
-            mods_tree.item(iid, tags=("enabled",))
+            mods_tree.item(iid, tags=("enabled", ))
             break
 
     update_status()
     log(f"Enabled mod: {mod_name}", text_widget)
 
+
 def disable_mod(mod_name, text_widget=None):
     dependents = get_dependents(mod_name)
     if dependents:
-        if not messagebox.askyesno("Disable Dependency",
-                                   f"The following mods depend on {mod_name}:\n{', '.join(dependents)}\nDisable them too?"):
+        if not messagebox.askyesno(
+                "Disable Dependency",
+                f"The following mods depend on {mod_name}:\n{', '.join(dependents)}\nDisable them too?"
+        ):
             return
         for d in dependents:
             disable_mod(d, text_widget)
-        
+
     if not mod_name or not GAME_PATH:
         return
     dst_dir = mods_disabled_dir()
@@ -973,24 +1073,30 @@ def disable_mod(mod_name, text_widget=None):
             messagebox.showerror("Error", f"Disable failed: {e}")
             return
     else:
-        messagebox.showwarning("Not found", f"Mod file for {mod_name} not found in enabled folder.")
-    cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
+        messagebox.showwarning(
+            "Not found",
+            f"Mod file for {mod_name} not found in enabled folder.")
+    cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name, ))
     conn.commit()
 
     for iid in mods_tree.get_children():
         vals = mods_tree.item(iid, "values")
         if vals and vals[0] == mod_name:
             mods_tree.item(iid, values=(vals[0], "Disabled", vals[2], vals[3]))
-            mods_tree.item(iid, tags=("disabled",))
+            mods_tree.item(iid, tags=("disabled", ))
             break
 
     update_status()
     log(f"Disabled mod: {mod_name}", text_widget)
 
+
 def uninstall_mod(mod_name, text_widget=None):
     if not mod_name or not GAME_PATH:
         return
-    paths = [os.path.join(GAME_PATH, mod_name), os.path.join(mods_disabled_dir(), mod_name)]
+    paths = [
+        os.path.join(GAME_PATH, mod_name),
+        os.path.join(mods_disabled_dir(), mod_name)
+    ]
     removed = False
     for p in paths:
         if os.path.isfile(p):
@@ -1000,14 +1106,16 @@ def uninstall_mod(mod_name, text_widget=None):
                 removed = True
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to remove {p}: {e}")
-    cursor.execute("DELETE FROM mods WHERE name=?", (mod_name,))
+    cursor.execute("DELETE FROM mods WHERE name=?", (mod_name, ))
     conn.commit()
     if removed:
         log(f"Uninstalled mod: {mod_name}", text_widget)
     else:
-        log(f"Mod {mod_name} not found on disk, record removed from DB.", text_widget)
+        log(f"Mod {mod_name} not found on disk, record removed from DB.",
+            text_widget)
     refresh_tree()
     update_status()
+
 
 def export_load_order():
     cursor.execute("SELECT name, enabled FROM mods")
@@ -1019,7 +1127,9 @@ def export_load_order():
     messagebox.showinfo("Exported", f"Load order exported to:\n{path}")
     log(f"Exported load order to {path}", text_widget=log_text)
 
+
 def watch_mods(root, refresh_func, interval=5):
+
     def worker():
         last_snapshot = set()
         while True:
@@ -1040,22 +1150,32 @@ def watch_mods(root, refresh_func, interval=5):
                         if f.lower().endswith('.z2f'):
                             found.add((f, 1 if folder == GAME_PATH else 0))
             if found != last_snapshot:
+
                 def update_db_and_refresh():
                     for mod_name, enabled in found:
-                        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM mods WHERE name=?",
+                            (mod_name, ))
                         if cursor.fetchone()[0] == 0:
-                            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod_name, enabled))
+                            cursor.execute(
+                                "INSERT INTO mods (name, enabled) VALUES (?, ?)",
+                                (mod_name, enabled))
                         else:
-                            cursor.execute("UPDATE mods SET enabled=? WHERE name=?", (enabled, mod_name))
+                            cursor.execute(
+                                "UPDATE mods SET enabled=? WHERE name=?",
+                                (enabled, mod_name))
                     conn.commit()
                     refresh_func()
                     update_status()
 
                     refresh_tree()
+
                 root.after(0, update_db_and_refresh)
                 last_snapshot = found
             time.sleep(interval)
+
     threading.Thread(target=worker, daemon=True).start()
+
 
 def bundle_create_dialog():
     dlg = tk.Toplevel(root)
@@ -1068,7 +1188,9 @@ def bundle_create_dialog():
     name_var = tk.StringVar()
     ttk.Entry(dlg, textvariable=name_var).pack(fill=tk.X, padx=8)
 
-    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w', padx=8, pady=(8, 2))
+    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w',
+                                                        padx=8,
+                                                        pady=(8, 2))
     mods_listbox = tk.Listbox(dlg, selectmode=tk.MULTIPLE, height=16)
     mods_listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
@@ -1082,11 +1204,15 @@ def bundle_create_dialog():
         sel = mods_listbox.curselection()
         selected = [mods_all[i] for i in sel]
         if not bname or not selected:
-            messagebox.showerror("Invalid", "Provide a name and select at least one mod.", parent=dlg)
+            messagebox.showerror("Invalid",
+                                 "Provide a name and select at least one mod.",
+                                 parent=dlg)
             return
         ok = create_bundle(bname, selected)
         if not ok:
-            messagebox.showerror("Error", "Bundle name already exists or invalid.", parent=dlg)
+            messagebox.showerror("Error",
+                                 "Bundle name already exists or invalid.",
+                                 parent=dlg)
             return
         dlg.destroy()
         refresh_bundles_list()
@@ -1094,8 +1220,13 @@ def bundle_create_dialog():
 
     btnrow = ttk.Frame(dlg, padding=6)
     btnrow.pack(fill=tk.X)
-    ttk.Button(btnrow, text="Create", command=_do_create, bootstyle="success").pack(side=tk.RIGHT, padx=4)
-    ttk.Button(btnrow, text="Cancel", command=dlg.destroy, bootstyle="secondary").pack(side=tk.RIGHT)
+    ttk.Button(btnrow, text="Create", command=_do_create,
+               bootstyle="success").pack(side=tk.RIGHT, padx=4)
+    ttk.Button(btnrow,
+               text="Cancel",
+               command=dlg.destroy,
+               bootstyle="secondary").pack(side=tk.RIGHT)
+
 
 def bundle_apply():
     name = _selected_bundle_name()
@@ -1105,6 +1236,7 @@ def bundle_apply():
     apply_bundle(name, text_widget=log_text)
     refresh_bundle_preview()
     refresh_tree()
+
 
 def bundle_delete():
     name = _selected_bundle_name()
@@ -1116,6 +1248,7 @@ def bundle_delete():
         refresh_bundles_list()
         log(f"Deleted bundle: {name}", log_text)
 
+
 def bundle_export_json():
     name = _selected_bundle_name()
     if not name or name.startswith("("):
@@ -1123,9 +1256,11 @@ def bundle_export_json():
         return
     export_bundle_as_json(name)
 
+
 def bundle_import_json():
     import_bundle_from_json()
     refresh_bundles_list()
+
 
 def bundle_export_z2f():
     name = _selected_bundle_name()
@@ -1134,55 +1269,70 @@ def bundle_export_z2f():
         return
     export_bundle_as_mod_ui(name)
 
+
 def create_bundle(bundle_name, mod_list):
     if not bundle_name or not mod_list:
         return False
-    cursor.execute("SELECT COUNT(*) FROM bundles WHERE name=?", (bundle_name,))
+    cursor.execute("SELECT COUNT(*) FROM bundles WHERE name=?",
+                   (bundle_name, ))
     if cursor.fetchone()[0] > 0:
         return False
-    cursor.execute("INSERT INTO bundles (name) VALUES (?)", (bundle_name,))
+    cursor.execute("INSERT INTO bundles (name) VALUES (?)", (bundle_name, ))
     bundle_id = cursor.lastrowid
     for m in mod_list:
-        cursor.execute("INSERT OR IGNORE INTO bundle_mods (bundle_id, mod_name) VALUES (?, ?)", (bundle_id, m))
+        cursor.execute(
+            "INSERT OR IGNORE INTO bundle_mods (bundle_id, mod_name) VALUES (?, ?)",
+            (bundle_id, m))
     conn.commit()
     return True
 
+
 def delete_bundle(bundle_name):
-    cursor.execute("SELECT id FROM bundles WHERE name=?", (bundle_name,))
+    cursor.execute("SELECT id FROM bundles WHERE name=?", (bundle_name, ))
     row = cursor.fetchone()
     if not row:
         return False
     bundle_id = row[0]
-    cursor.execute("DELETE FROM bundle_mods WHERE bundle_id=?", (bundle_id,))
-    cursor.execute("DELETE FROM bundles WHERE id=?", (bundle_id,))
+    cursor.execute("DELETE FROM bundle_mods WHERE bundle_id=?", (bundle_id, ))
+    cursor.execute("DELETE FROM bundles WHERE id=?", (bundle_id, ))
     conn.commit()
     return True
+
 
 def get_bundles():
     cursor.execute("SELECT id, name FROM bundles ORDER BY name")
     bundles = []
     for bid, name in cursor.fetchall():
-        cursor.execute("SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name", (bid,))
+        cursor.execute(
+            "SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name",
+            (bid, ))
         mods = [r[0] for r in cursor.fetchall()]
         bundles.append((name, mods))
     return bundles
 
+
 def get_bundle_mods(bundle_name):
-    cursor.execute("SELECT id FROM bundles WHERE name=?", (bundle_name,))
+    cursor.execute("SELECT id FROM bundles WHERE name=?", (bundle_name, ))
     row = cursor.fetchone()
     if not row:
         return []
     bid = row[0]
-    cursor.execute("SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name", (bid,))
+    cursor.execute(
+        "SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name",
+        (bid, ))
     return [r[0] for r in cursor.fetchall()]
+
 
 def apply_bundle(bundle_name, text_widget=None):
     mods = get_bundle_mods(bundle_name)
     if not mods:
-        messagebox.showinfo("Empty", "Bundle contains no mods or was not found.")
+        messagebox.showinfo("Empty",
+                            "Bundle contains no mods or was not found.")
         return
-    exclusive = messagebox.askyesno("Apply Bundle",
-                                    "Enable the bundle mods AND disable mods not in the bundle?\n(Yes = exclusive, No = enable bundle mods only)")
+    exclusive = messagebox.askyesno(
+        "Apply Bundle",
+        "Enable the bundle mods AND disable mods not in the bundle?\n(Yes = exclusive, No = enable bundle mods only)"
+    )
     for m in mods:
         enable_mod(m, text_widget=text_widget)
     if exclusive:
@@ -1191,7 +1341,9 @@ def apply_bundle(bundle_name, text_widget=None):
         for en in enabled_now:
             if en not in mods:
                 disable_mod(en, text_widget=text_widget)
-    log(f"Applied bundle: {bundle_name} (mods: {', '.join(mods)})", text_widget)
+    log(f"Applied bundle: {bundle_name} (mods: {', '.join(mods)})",
+        text_widget)
+
 
 def export_bundle_as_json(bundle_name):
     mods = get_bundle_mods(bundle_name)
@@ -1199,16 +1351,20 @@ def export_bundle_as_json(bundle_name):
         messagebox.showerror("Error", "Bundle not found or empty")
         return
     payload = {"name": bundle_name, "mods": mods}
-    path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")], title="Export Bundle As")
+    path = filedialog.asksaveasfilename(defaultextension=".json",
+                                        filetypes=[("JSON", "*.json")],
+                                        title="Export Bundle As")
     if not path:
         return
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=4)
     messagebox.showinfo("Exported", f"Bundle exported to:\n{path}")
 
+
 def import_bundle_from_json(path=None):
     if not path:
-        path = filedialog.askopenfilename(title="Import Bundle JSON", filetypes=[("JSON", "*.json")])
+        path = filedialog.askopenfilename(title="Import Bundle JSON",
+                                          filetypes=[("JSON", "*.json")])
     if not path:
         return
     with open(path, "r", encoding="utf-8") as f:
@@ -1221,19 +1377,21 @@ def import_bundle_from_json(path=None):
     existing = []
     missing = []
     for m in mods:
-        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (m,))
+        cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (m, ))
         if cursor.fetchone()[0] > 0:
             existing.append(m)
         else:
             missing.append(m)
     created = create_bundle(name, existing)
     if not created:
-        messagebox.showerror("Exists", "Bundle with that name already exists or invalid")
+        messagebox.showerror(
+            "Exists", "Bundle with that name already exists or invalid")
         return
     msg = f"Imported bundle '{name}'.\nAdded {len(existing)} existing mods."
     if missing:
         msg += f"\n{len(missing)} mods were missing locally and were not added: {', '.join(missing)}"
     messagebox.showinfo("Imported", msg)
+
 
 def export_bundle_as_z2f(bundle_name, include_files, output_path):
     mods = get_bundle_mods(bundle_name)
@@ -1246,10 +1404,12 @@ def export_bundle_as_z2f(bundle_name, include_files, output_path):
         if p:
             mod_paths.append(p)
         else:
-            log(f"Warning: mod file for {m} not found on disk", text_widget=log_text)
+            log(f"Warning: mod file for {m} not found on disk",
+                text_widget=log_text)
 
     if not mod_paths:
-        messagebox.showerror("Error", "None of the bundle mod files were found on disk")
+        messagebox.showerror(
+            "Error", "None of the bundle mod files were found on disk")
         return
 
     tmp_dir = tempfile.mkdtemp()
@@ -1274,9 +1434,11 @@ def export_bundle_as_z2f(bundle_name, include_files, output_path):
                     rel = os.path.relpath(abs_path, tmp_dir)
                     outzip.write(abs_path, rel)
         log(f"Exported merged bundle to: {output_path}", text_widget=log_text)
-        messagebox.showinfo("Exported", f"Bundle merged and exported to:\n{output_path}")
+        messagebox.showinfo("Exported",
+                            f"Bundle merged and exported to:\n{output_path}")
     finally:
         shutil.rmtree(tmp_dir)
+
 
 def export_bundle_as_mod_ui(bundle_name=None):
     if not bundle_name:
@@ -1296,7 +1458,8 @@ def export_bundle_as_mod_ui(bundle_name=None):
     for m in mods:
         p = find_mod_file(m)
         if not p:
-            log(f"Mod file {m} not found on disk; skipping", text_widget=log_text)
+            log(f"Mod file {m} not found on disk; skipping",
+                text_widget=log_text)
             continue
         mod_paths[m] = p
         try:
@@ -1308,7 +1471,8 @@ def export_bundle_as_mod_ui(bundle_name=None):
 
     files = sorted(file_map.keys())
     if not files:
-        messagebox.showerror("Error", "No files found inside bundle mod archives")
+        messagebox.showerror("Error",
+                             "No files found inside bundle mod archives")
         return
 
     dlg = tk.Toplevel(root)
@@ -1322,7 +1486,8 @@ def export_bundle_as_mod_ui(bundle_name=None):
     scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=canvas.yview)
     inner = ttk.Frame(canvas)
 
-    inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    inner.bind("<Configure>",
+               lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
     canvas.create_window((0, 0), window=inner, anchor='nw')
     canvas.configure(yscrollcommand=scrollbar.set)
 
@@ -1350,6 +1515,7 @@ def export_bundle_as_mod_ui(bundle_name=None):
         export_bundle_as_z2f(bundle_name, included, out_path)
         dlg.destroy()
 
+
 settings = load_settings()
 system_theme = get_system_theme()
 
@@ -1369,6 +1535,7 @@ root = Window(themename="darkly" if system_theme == "dark" else "cosmo")
 root.title(f"ModZT v{APP_VERSION}")
 root.geometry("1400x1000")
 
+
 def auto_switch_theme():
     try:
         current_system = get_system_theme()
@@ -1376,11 +1543,13 @@ def auto_switch_theme():
         if current_system != current_app:
             new_theme = "darkly" if current_system == "dark" else "cosmo"
             root.style.theme_use(new_theme)
-            log(f"Switched to {new_theme} mode automatically.", text_widget=log_text)
+            log(f"Switched to {new_theme} mode automatically.",
+                text_widget=log_text)
             apply_tree_theme()
     except Exception as e:
         print("Theme auto-switch error:", e)
     root.after(10000, auto_switch_theme)
+
 
 icon_candidates = [
     resource_path("modzt.ico"),
@@ -1395,6 +1564,7 @@ for icon_path in icon_candidates:
             break
         except Exception as e:
             print(f"[!] Failed to set icon from {icon_path}: {e}")
+
 
 def set_zt1_paths():
     global ZT1_PATH
@@ -1420,8 +1590,7 @@ def set_zt1_paths():
 
     messagebox.showinfo(
         "Set Mod Folder",
-        "Now select your ZT1 mod folder (usually 'dlupdates')."
-    )
+        "Now select your ZT1 mod folder (usually 'dlupdates').")
 
     mod_dir = filedialog.askdirectory(title="Select ZT1 Mod Folder")
     if mod_dir:
@@ -1434,14 +1603,16 @@ def set_zt1_paths():
 
     messagebox.showinfo(
         "Success",
-        f"Zoo Tycoon 1 paths saved!\n\nExe: {ZT1_PATH}\nMods: {ZT1_MOD_DIR}"
-    )
+        f"Zoo Tycoon 1 paths saved!\n\nExe: {ZT1_PATH}\nMods: {ZT1_MOD_DIR}")
+
 
 def launch_zt1():
     global ZT1_PATH
 
     if not ZT1_PATH or not os.path.isfile(os.path.join(ZT1_PATH, "zoo.exe")):
-        messagebox.showerror("Error", "ZT1 path not set or zoo.exe missing.\nUse 'Set ZT1 Path' first.")
+        messagebox.showerror(
+            "Error",
+            "ZT1 path not set or zoo.exe missing.\nUse 'Set ZT1 Path' first.")
         return
 
     exe_path = os.path.join(ZT1_PATH, "zoo.exe")
@@ -1450,6 +1621,7 @@ def launch_zt1():
         log("🎮 Launched Zoo Tycoon 1", text_widget=log_text)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to launch ZT1: {e}")
+
 
 banner = ttk.Frame(root, padding=12, bootstyle="dark")
 banner.pack(fill=tk.X)
@@ -1465,19 +1637,27 @@ if os.path.isfile(BANNER_FILE):
     except Exception as e:
         print("Banner load failed:", e)
 
-_tt = ttk.Label(banner, text="ModZT", font=("Segoe UI", 20, "bold"), bootstyle="inverse-dark")
+_tt = ttk.Label(banner,
+                text="ModZT",
+                font=("Segoe UI", 20, "bold"),
+                bootstyle="inverse-dark")
 _tt.pack(side=tk.LEFT)
 
 toolbar = ttk.Frame(root, padding=6, bootstyle="primary")
 toolbar.pack(fill=tk.X)
 
-lbl_game_path = ttk.Label(toolbar, text=GAME_PATH or "(not set)", width=80, bootstyle="secondary")
+lbl_game_path = ttk.Label(toolbar,
+                          text=GAME_PATH or "(not set)",
+                          width=80,
+                          bootstyle="secondary")
 lbl_game_path.pack(side=tk.LEFT, padx=(6, 10))
 
 game_menu_btn = ttk.Menubutton(toolbar, text="Game", bootstyle="info-outline")
 game_menu = tk.Menu(game_menu_btn, tearoff=0)
 game_menu.add_command(label="Set ZT1 Path", command=set_zt1_paths)
-game_menu.add_command(label="Set ZT2 Path", command=lambda: set_game_path(lbl_game_path, status_label))
+game_menu.add_command(
+    label="Set ZT2 Path",
+    command=lambda: set_game_path(lbl_game_path, status_label))
 game_menu.add_command(label="Play ZT1", command=launch_zt1)
 game_menu.add_command(label="Play ZT2", command=launch_game)
 game_menu_btn["menu"] = game_menu
@@ -1486,19 +1666,27 @@ game_menu_btn.pack(side=tk.LEFT, padx=4)
 mods_menu_btn = ttk.Menubutton(toolbar, text="Mods", bootstyle="info-outline")
 mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
 mods_menu.add_command(label="Export Load Order", command=export_load_order)
-mods_menu.add_command(label="Backup Mods",  command=backup_mods)
+mods_menu.add_command(label="Backup Mods", command=backup_mods)
 mods_menu.add_command(label="Restore Mods", command=restore_mods)
 mods_menu_btn["menu"] = mods_menu
 mods_menu_btn.pack(side=tk.LEFT, padx=4)
 
-tools_menu_btn = ttk.Menubutton(toolbar, text="Tools", bootstyle="info-outline")
+tools_menu_btn = ttk.Menubutton(toolbar,
+                                text="Tools",
+                                bootstyle="info-outline")
 tools_menu = tk.Menu(tools_menu_btn, tearoff=0)
-tools_menu.add_command(label="Validate Mods", command=lambda: messagebox.showinfo("Validate Mods", "All mods validated successfully."))
-tools_menu.add_command(label="Clean Temporary Files", command=lambda: messagebox.showinfo("Cleanup", "Temporary files cleaned up."))
+tools_menu.add_command(
+    label="Validate Mods",
+    command=lambda: messagebox.showinfo("Validate Mods",
+                                        "All mods validated successfully."))
+tools_menu.add_command(label="Clean Temporary Files",
+                       command=lambda: messagebox.showinfo(
+                           "Cleanup", "Temporary files cleaned up."))
 tools_menu_btn["menu"] = tools_menu
 tools_menu_btn.pack(side=tk.LEFT, padx=4)
 
 ttk.Separator(toolbar, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8)
+
 
 def toggle_theme():
     if root.style.theme_use() == 'darkly':
@@ -1507,13 +1695,17 @@ def toggle_theme():
         root.style.theme_use('darkly')
     log("Toggled theme", text_widget=log_text)
 
+
 def toggle_ui_mode():
     ui_mode["compact"] = not ui_mode["compact"]
     apply_ui_mode()
     mode = "Compact" if ui_mode["compact"] else "Expanded"
     log(f"Switched to {mode} mode", text_widget=log_text)
 
-view_menu_button = ttk.Menubutton(toolbar, text="View", bootstyle="info-outline")
+
+view_menu_button = ttk.Menubutton(toolbar,
+                                  text="View",
+                                  bootstyle="info-outline")
 view_menu = tk.Menu(view_menu_button, tearoff=0)
 view_menu.add_command(label="Toggle Theme", command=toggle_theme)
 view_menu.add_command(label="Compact Mode", command=toggle_ui_mode)
@@ -1522,8 +1714,12 @@ view_menu_button.pack(side=tk.LEFT, padx=4)
 
 help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
 help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT", command=lambda: messagebox.showinfo("About", "ModZT v1.1.1\nCreated by Kael"))
-help_menu.add_command(label="Open GitHub Page", command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
+help_menu.add_command(label="About ModZT",
+                      command=lambda: messagebox.showinfo(
+                          "About", "ModZT v1.1.1\nCreated by Kael"))
+help_menu.add_command(
+    label="Open GitHub Page",
+    command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
 help_menu.add_command(label="Check for Updates", command=check_for_updates)
 help_menu_btn["menu"] = help_menu
 help_menu_btn.pack(side=tk.LEFT, padx=4)
@@ -1559,22 +1755,39 @@ search_entry = ttk.Entry(search_frame, textvariable=zt1_search_var)
 search_entry.pack(side="left", fill="x", expand=True, padx=(4, 6))
 
 ttk.Label(search_frame, text="Status:").pack(side="left")
-ttk.OptionMenu(search_frame, zt1_status_filter, "All", "All", "Enabled", "Disabled").pack(side="left")
+ttk.OptionMenu(search_frame, zt1_status_filter, "All", "All", "Enabled",
+               "Disabled").pack(side="left")
 
-ttk.Button(search_frame, text="Clear",
-           command=lambda: (zt1_search_var.set(""), zt1_status_filter.set("All"), refresh_zt1_tree())
-           ).pack(side="left", padx=(6, 0))
+ttk.Button(search_frame,
+           text="Clear",
+           command=lambda:
+           (zt1_search_var.set(""), zt1_status_filter.set("All"),
+            refresh_zt1_tree())).pack(side="left", padx=(6, 0))
 
-ttk.Button(zt1_toolbar, text="Enable", bootstyle="success", width=10,
-           command=lambda: enable_selected_zt1_mod()).pack(side=tk.LEFT, padx=4)
-ttk.Button(zt1_toolbar, text="Disable", bootstyle="warning", width=10,
-           command=lambda: disable_selected_zt1_mod()).pack(side=tk.LEFT, padx=4)
-ttk.Button(zt1_toolbar, text="Refresh", width=10,
+ttk.Button(zt1_toolbar,
+           text="Enable",
+           bootstyle="success",
+           width=10,
+           command=lambda: enable_selected_zt1_mod()).pack(side=tk.LEFT,
+                                                           padx=4)
+ttk.Button(zt1_toolbar,
+           text="Disable",
+           bootstyle="warning",
+           width=10,
+           command=lambda: disable_selected_zt1_mod()).pack(side=tk.LEFT,
+                                                            padx=4)
+ttk.Button(zt1_toolbar,
+           text="Refresh",
+           width=10,
            command=lambda: refresh_zt1_tree()).pack(side=tk.LEFT, padx=4)
-ttk.Button(zt1_toolbar, text="Open Mods Folder", width=16,
-           command=lambda: os.startfile(ZT1_MOD_DIR or os.path.join(ZT1_PATH, "dlupdates"))
-           if ZT1_PATH else messagebox.showerror("Error", "ZT1 path not set.")
-           ).pack(side=tk.LEFT, padx=4)
+ttk.Button(
+    zt1_toolbar,
+    text="Open Mods Folder",
+    width=16,
+    command=lambda: os.startfile(ZT1_MOD_DIR or os.path.join(
+        ZT1_PATH, "dlupdates"))
+    if ZT1_PATH else messagebox.showerror("Error", "ZT1 path not set.")).pack(
+        side=tk.LEFT, padx=4)
 
 zt1_frame = ttk.Frame(zt1_tab)
 zt1_frame.pack(fill=tk.BOTH, expand=True, pady=4)
@@ -1587,7 +1800,9 @@ zt1_tree = ttk.Treeview(
 )
 
 for col in ("Name", "Status", "Category", "Tags", "Size"):
-    zt1_tree.heading(col, text=col, command=lambda c=col: sort_zt1_tree(c, False))
+    zt1_tree.heading(col,
+                     text=col,
+                     command=lambda c=col: sort_zt1_tree(c, False))
 
 zt1_tree.column("Name", anchor="w", width=350)
 zt1_tree.column("Status", anchor="center", width=80)
@@ -1595,7 +1810,9 @@ zt1_tree.column("Category", anchor="center", width=120)
 zt1_tree.column("Tags", anchor="center", width=180)
 zt1_tree.column("Size", anchor="e", width=80)
 
-scrollbar = ttk.Scrollbar(zt1_frame, orient=tk.VERTICAL, command=zt1_tree.yview)
+scrollbar = ttk.Scrollbar(zt1_frame,
+                          orient=tk.VERTICAL,
+                          command=zt1_tree.yview)
 zt1_tree.configure(yscrollcommand=scrollbar.set)
 zt1_tree.grid(row=0, column=0, sticky="nsew")
 scrollbar.grid(row=0, column=1, sticky="ns")
@@ -1603,16 +1820,27 @@ scrollbar.grid(row=0, column=1, sticky="ns")
 zt1_frame.rowconfigure(0, weight=1)
 zt1_frame.columnconfigure(0, weight=1)
 
+
 def auto_resize_columns(event):
     total_width = event.width
-    ratios = {"Name": 0.4, "Status": 0.1, "Category": 0.15, "Tags": 0.15, "Size": 0.1}
+    ratios = {
+        "Name": 0.4,
+        "Status": 0.1,
+        "Category": 0.15,
+        "Tags": 0.15,
+        "Size": 0.1
+    }
     for col, r in ratios.items():
         zt1_tree.column(col, width=int(total_width * r))
+
+
 zt1_tree.bind("<Configure>", auto_resize_columns)
 
 zt1_menu = tk.Menu(zt1_tree, tearoff=0)
-zt1_menu.add_command(label="Set Category", command=lambda: set_zt1_mod_category())
+zt1_menu.add_command(label="Set Category",
+                     command=lambda: set_zt1_mod_category())
 zt1_menu.add_command(label="Set Tags", command=lambda: set_zt1_mod_tags())
+
 
 def on_zt1_right_click(event):
     iid = zt1_tree.identify_row(event.y)
@@ -1620,7 +1848,9 @@ def on_zt1_right_click(event):
         zt1_tree.selection_set(iid)
         zt1_menu.post(event.x_root, event.y_root)
 
+
 zt1_tree.bind("<Button-3>", on_zt1_right_click)
+
 
 def set_zt1_mod_category():
     selected = zt1_tree.selection()
@@ -1628,10 +1858,14 @@ def set_zt1_mod_category():
         return
     name = zt1_tree.item(selected[0])["values"][0]
     old = get_mod_category(name, zt1=True)
-    new = simpledialog.askstring("Set Category", f"Enter category for '{name}':", initialvalue=old, parent=root)
+    new = simpledialog.askstring("Set Category",
+                                 f"Enter category for '{name}':",
+                                 initialvalue=old,
+                                 parent=root)
     if new:
         set_mod_category(name, new, zt1=True)
         refresh_zt1_tree()
+
 
 def set_zt1_mod_tags():
     selected = zt1_tree.selection()
@@ -1639,24 +1873,28 @@ def set_zt1_mod_tags():
         return
     name = zt1_tree.item(selected[0])["values"][0]
     old = ", ".join(get_mod_tags(name, zt1=True))
-    new = simpledialog.askstring("Set Tags", f"Enter tags for '{name}' (comma-separated):", initialvalue=old, parent=root)
+    new = simpledialog.askstring("Set Tags",
+                                 f"Enter tags for '{name}' (comma-separated):",
+                                 initialvalue=old,
+                                 parent=root)
     if new is not None:
         tags = [t.strip() for t in new.split(",")]
         set_mod_tags(name, tags, zt1=True)
         refresh_zt1_tree()
 
+
 zt1_mod_btns = ttk.Frame(zt1_tab, padding=6)
 zt1_mod_btns.pack(fill=tk.X)
 
-zt1_footer = ttk.Label(
-    zt1_tab,
-    text="Total mods: Total 0 | Enabled 0 | Disabled 0",
-    bootstyle="secondary"
-)
+zt1_footer = ttk.Label(zt1_tab,
+                       text="Total mods: Total 0 | Enabled 0 | Disabled 0",
+                       bootstyle="secondary")
 zt1_footer.pack(anchor="w", padx=6, pady=(2, 0))
 
 zt1_menu = tk.Menu(zt1_tree, tearoff=0)
-zt1_menu.add_command(label="Set Category", command=lambda: set_zt1_mod_category())
+zt1_menu.add_command(label="Set Category",
+                     command=lambda: set_zt1_mod_category())
+
 
 def on_zt1_right_click(event):
     iid = zt1_tree.identify_row(event.y)
@@ -1664,7 +1902,9 @@ def on_zt1_right_click(event):
         zt1_tree.selection_set(iid)
         zt1_menu.post(event.x_root, event.y_root)
 
+
 zt1_tree.bind("<Button-3>", on_zt1_right_click)
+
 
 def set_zt1_mod_category():
     selected = zt1_tree.selection()
@@ -1673,25 +1913,27 @@ def set_zt1_mod_category():
     item = zt1_tree.item(selected[0])
     name = item["values"][0]
 
-    new_cat = simpledialog.askstring(
-        "Set Category",
-        f"Enter a category for '{name}':",
-        parent=root
-    )
+    new_cat = simpledialog.askstring("Set Category",
+                                     f"Enter a category for '{name}':",
+                                     parent=root)
     if new_cat:
-        cursor.execute("UPDATE zt1_mods SET category=? WHERE name=?", (new_cat, name))
+        cursor.execute("UPDATE zt1_mods SET category=? WHERE name=?",
+                       (new_cat, name))
         conn.commit()
         refresh_zt1_tree()
+
 
 def sort_zt1_tree(col, reverse=False):
     data = [(zt1_tree.set(k, col), k) for k in zt1_tree.get_children("")]
 
     if col == "Size":
+
         def parse_size(s):
             try:
                 return float(s.split()[0]) if "KB" in s else 0
             except Exception:
                 return 0
+
         data.sort(key=lambda t: parse_size(t[0]), reverse=reverse)
     else:
         data.sort(key=lambda t: str(t[0]).lower(), reverse=reverse)
@@ -1705,7 +1947,11 @@ def sort_zt1_tree(col, reverse=False):
         label = c
         if c == col:
             label += " 🔽" if reverse else " 🔼"
-        zt1_tree.heading(c, text=label, command=lambda c=c: sort_zt1_tree(c, not (c == col and reverse)))
+        zt1_tree.heading(
+            c,
+            text=label,
+            command=lambda c=c: sort_zt1_tree(c, not (c == col and reverse)))
+
 
 def refresh_zt1_tree(filter_text=""):
     for row in zt1_tree.get_children():
@@ -1718,7 +1964,8 @@ def refresh_zt1_tree(filter_text=""):
     enabled_count = enabled_count or 0
     disabled_count = total - enabled_count
 
-    cursor.execute("SELECT name, enabled, category, tags FROM zt1_mods ORDER BY name ASC")
+    cursor.execute(
+        "SELECT name, enabled, category, tags FROM zt1_mods ORDER BY name ASC")
     all_rows = cursor.fetchall()
 
     filter_text = (zt1_search_var.get() or "").strip().lower()
@@ -1740,23 +1987,33 @@ def refresh_zt1_tree(filter_text=""):
         status = "enabled" if enabled else "disabled"
         display_status = "🟢 Enabled" if enabled else "🔴 Disabled"
         mod_path = os.path.join(ZT1_MOD_DIR, name)
-        size = f"{os.path.getsize(mod_path)/1024:.1f} KB" if os.path.exists(mod_path) else "-"
-        zt1_tree.insert("", tk.END, values=(name, display_status, category or "—", tags or "—", size), tags=(status,))
+        size = f"{os.path.getsize(mod_path)/1024:.1f} KB" if os.path.exists(
+            mod_path) else "-"
+        zt1_tree.insert("",
+                        tk.END,
+                        values=(name, display_status, category or "—", tags
+                                or "—", size),
+                        tags=(status, ))
 
     zt1_footer.config(
-        text=f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
+        text=
+        f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
     )
 
     apply_zt1_tree_theme()
 
+
 zt1_search_var.trace_add("write", lambda *_: refresh_zt1_tree())
 zt1_status_filter.trace_add("write", lambda *_: refresh_zt1_tree())
+
 
 def on_search_zt1(*args):
     text = zt1_search_var.get().strip()
     refresh_zt1_tree(text)
 
+
 zt1_search_var.trace_add("write", on_search_zt1)
+
 
 def get_selected_zt1_mod():
     sel = zt1_tree.selection()
@@ -1765,17 +2022,20 @@ def get_selected_zt1_mod():
         return None
     return zt1_tree.item(sel[0])["values"][0]
 
+
 def enable_selected_zt1_mod():
     mod = get_selected_zt1_mod()
     if mod:
         enable_zt1_mod(mod, text_widget=log_text)
         refresh_zt1_tree()
 
+
 def disable_selected_zt1_mod():
     mod = get_selected_zt1_mod()
     if mod:
         disable_zt1_mod(mod, text_widget=log_text)
         refresh_zt1_tree()
+
 
 def apply_zt1_tree_theme():
     if root.style.theme_use() == "darkly":
@@ -1784,6 +2044,7 @@ def apply_zt1_tree_theme():
     else:
         zt1_tree.tag_configure("enabled", foreground="#007f00")
         zt1_tree.tag_configure("disabled", foreground="#b30000")
+
 
 search_frame = ttk.Frame(mods_tab)
 search_frame.pack(fill=tk.X)
@@ -1798,12 +2059,10 @@ mods_tree_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
 mods_tree_scroll = ttk.Scrollbar(mods_tree_frame)
 mods_tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-mods_tree = ttk.Treeview(
-    mods_tree_frame,
-    columns=("Name", "Status", "Size", "Modified"),
-    show="headings",
-    yscrollcommand=mods_tree_scroll.set
-)
+mods_tree = ttk.Treeview(mods_tree_frame,
+                         columns=("Name", "Status", "Size", "Modified"),
+                         show="headings",
+                         yscrollcommand=mods_tree_scroll.set)
 mods_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 mods_tree_scroll.config(command=mods_tree.yview)
 
@@ -1813,15 +2072,21 @@ mods_tree.column("Size", width=100, anchor="e")
 mods_tree.column("Modified", width=180, anchor="center")
 
 mods_tree.heading("Name", text="Name", command=lambda: sort_tree_by("Name"))
-mods_tree.heading("Status", text="Status", command=lambda: sort_tree_by("Status"))
-mods_tree.heading("Size", text="Size (MB)", command=lambda: sort_tree_by("Size"))
-mods_tree.heading("Modified", text="Last Modified", command=lambda: sort_tree_by("Modified"))
+mods_tree.heading("Status",
+                  text="Status",
+                  command=lambda: sort_tree_by("Status"))
+mods_tree.heading("Size",
+                  text="Size (MB)",
+                  command=lambda: sort_tree_by("Size"))
+mods_tree.heading("Modified",
+                  text="Last Modified",
+                  command=lambda: sort_tree_by("Modified"))
 
 mods_tree.bind("<Double-1>", lambda e: show_mod_details())
 
-mod_count_label = ttk.Label(
-    mods_tab, text="Total mods: 0 | Enabled: 0 | Disabled: 0", bootstyle="secondary"
-)
+mod_count_label = ttk.Label(mods_tab,
+                            text="Total mods: 0 | Enabled: 0 | Disabled: 0",
+                            bootstyle="secondary")
 mod_count_label.pack(anchor="w", padx=6, pady=(2, 0))
 
 mod_btns = ttk.Frame(mods_tab, padding=6)
@@ -1830,16 +2095,21 @@ mod_btns.pack(fill=tk.X, pady=(0, 4))
 mods_menu = tk.Menu(root, tearoff=0)
 mods_menu.add_command(label="Enable", command=lambda: enable_selected_mod())
 mods_menu.add_command(label="Disable", command=lambda: disable_selected_mod())
-mods_menu.add_command(label="Uninstall", command=lambda: uninstall_selected_mod())
-mods_menu.add_command(label="Inspect ZIP", command=lambda: inspect_selected_mod())
+mods_menu.add_command(label="Uninstall",
+                      command=lambda: uninstall_selected_mod())
+mods_menu.add_command(label="Inspect ZIP",
+                      command=lambda: inspect_selected_mod())
 mods_menu.add_separator()
-mods_menu.add_command(label="Open Mod Folder", command=lambda: open_mod_folder())
+mods_menu.add_command(label="Open Mod Folder",
+                      command=lambda: open_mod_folder())
+
 
 def on_mod_right_click(event):
     iid = mods_tree.identify_row(event.y)
     if iid:
         mods_tree.selection_set(iid)
         mods_menu.post(event.x_root, event.y_root)
+
 
 def treeview_sort_column(tree, col, reverse=False):
     data = [(tree.set(k, col), k) for k in tree.get_children('')]
@@ -1852,27 +2122,44 @@ def treeview_sort_column(tree, col, reverse=False):
     for index, (val, k) in enumerate(data):
         tree.move(k, '', index)
 
-    tree.heading(col, command=lambda: treeview_sort_column(tree, col, not reverse))
+    tree.heading(col,
+                 command=lambda: treeview_sort_column(tree, col, not reverse))
 
     sort_arrow = " ▲" if not reverse else " ▼"
     for c in tree["columns"]:
         text = c.capitalize()
         if c == col:
             text += sort_arrow
-        tree.heading(c, text=text, command=lambda _col=c: treeview_sort_column(tree, _col, _col == col and not reverse))
+        tree.heading(c,
+                     text=text,
+                     command=lambda _col=c: treeview_sort_column(
+                         tree, _col, _col == col and not reverse))
+
 
 mods_tree.bind("<Button-3>", on_mod_right_click)
 
 mod_btns = ttk.Frame(mods_tab, padding=6)
 mod_btns.pack(fill=tk.X)
 
-enable_btn = ttk.Button(mod_btns, text="Enable", command=lambda: (enable_selected_mod(),), bootstyle="success")
+enable_btn = ttk.Button(mod_btns,
+                        text="Enable",
+                        command=lambda: (enable_selected_mod(), ),
+                        bootstyle="success")
 enable_btn.pack(side=tk.LEFT, padx=4)
-disable_btn = ttk.Button(mod_btns, text="Disable", command=lambda: (disable_selected_mod(),), bootstyle="danger")
+disable_btn = ttk.Button(mod_btns,
+                         text="Disable",
+                         command=lambda: (disable_selected_mod(), ),
+                         bootstyle="danger")
 disable_btn.pack(side=tk.LEFT, padx=4)
-uninstall_btn = ttk.Button(mod_btns, text="Uninstall", command=lambda: (uninstall_selected_mod(),), bootstyle="warning")
+uninstall_btn = ttk.Button(mod_btns,
+                           text="Uninstall",
+                           command=lambda: (uninstall_selected_mod(), ),
+                           bootstyle="warning")
 uninstall_btn.pack(side=tk.LEFT, padx=4)
-refresh_btn = ttk.Button(mod_btns, text="Refresh List", command=lambda: (detect_existing_mods(), refresh_tree()))
+refresh_btn = ttk.Button(mod_btns,
+                         text="Refresh List",
+                         command=lambda:
+                         (detect_existing_mods(), refresh_tree()))
 refresh_btn.pack(side=tk.LEFT, padx=4)
 
 bundles_tab = ttk.Frame(notebook, padding=6)
@@ -1885,20 +2172,28 @@ shots_tab = ttk.Frame(notebook, padding=6)
 notebook.add(shots_tab, text="Screenshots")
 
 shots_toolbar = ttk.Frame(shots_tab)
-shots_toolbar.pack(fill=tk.X, pady=(0,6))
+shots_toolbar.pack(fill=tk.X, pady=(0, 6))
 
 shots_path_var = tk.StringVar(value=get_zt2_photos_root() or "(Not found)")
 ttk.Label(shots_toolbar, text="Root:").pack(side=tk.LEFT)
-ttk.Entry(shots_toolbar, textvariable=shots_path_var, width=80).pack(side=tk.LEFT, padx=6)
+ttk.Entry(shots_toolbar, textvariable=shots_path_var,
+          width=80).pack(side=tk.LEFT, padx=6)
+
 
 def browse_shots_root():
-    p = filedialog.askdirectory(title="Select ZT2 photos root (contains album0, album1, ...)")
+    p = filedialog.askdirectory(
+        title="Select ZT2 photos root (contains album0, album1, ...)")
     if p:
         shots_path_var.set(p)
         refresh_screenshots()
 
-ttk.Button(shots_toolbar, text="Browse…", command=browse_shots_root).pack(side=tk.LEFT, padx=4)
-ttk.Button(shots_toolbar, text="Refresh", command=lambda: refresh_screenshots()).pack(side=tk.LEFT, padx=4)
+
+ttk.Button(shots_toolbar, text="Browse…",
+           command=browse_shots_root).pack(side=tk.LEFT, padx=4)
+ttk.Button(shots_toolbar,
+           text="Refresh",
+           command=lambda: refresh_screenshots()).pack(side=tk.LEFT, padx=4)
+
 
 def open_current_root():
     r = shots_path_var.get().strip()
@@ -1907,44 +2202,61 @@ def open_current_root():
     else:
         messagebox.showinfo("Open", "Root folder not found.")
 
-ttk.Button(shots_toolbar, text="Open Folder", command=open_current_root).pack(side=tk.LEFT, padx=4)
+
+ttk.Button(shots_toolbar, text="Open Folder",
+           command=open_current_root).pack(side=tk.LEFT, padx=4)
 
 shots_split = ttk.PanedWindow(shots_tab, orient=tk.HORIZONTAL)
 shots_split.pack(fill=tk.BOTH, expand=True)
 
-shots_left = ttk.Frame(shots_split, width=220, padding=(4,6))
+shots_left = ttk.Frame(shots_split, width=220, padding=(4, 6))
 shots_left.pack_propagate(False)
 shots_split.add(shots_left, weight=0)
 
-ttk.Label(shots_left, text="Albums", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0,6))
+ttk.Label(shots_left, text="Albums",
+          font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 6))
 
 album_list_scroll = ttk.Scrollbar(shots_left, orient="vertical")
-album_list = tk.Listbox(shots_left, exportselection=False, height=20, yscrollcommand=album_list_scroll.set)
+album_list = tk.Listbox(shots_left,
+                        exportselection=False,
+                        height=20,
+                        yscrollcommand=album_list_scroll.set)
 album_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 album_list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 album_list_scroll.config(command=album_list.yview)
 
-shots_right = ttk.Frame(shots_split, padding=(6,6))
+shots_right = ttk.Frame(shots_split, padding=(6, 6))
 shots_split.add(shots_right, weight=1)
 
 thumb_canvas = tk.Canvas(shots_right, highlightthickness=0)
-thumb_scroll = ttk.Scrollbar(shots_right, orient=tk.VERTICAL, command=thumb_canvas.yview)
+thumb_scroll = ttk.Scrollbar(shots_right,
+                             orient=tk.VERTICAL,
+                             command=thumb_canvas.yview)
 thumb_canvas.configure(yscrollcommand=thumb_scroll.set)
 thumb_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 thumb_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
 thumb_inner = ttk.Frame(thumb_canvas)
-thumb_window = thumb_canvas.create_window((0,0), window=thumb_inner, anchor="nw")
+thumb_window = thumb_canvas.create_window((0, 0),
+                                          window=thumb_inner,
+                                          anchor="nw")
+
 
 def _thumb_cfg(event):
     thumb_canvas.configure(scrollregion=thumb_canvas.bbox("all"))
+
+
 thumb_inner.bind("<Configure>", _thumb_cfg)
+
 
 def _canvas_cfg(event):
     thumb_canvas.itemconfigure(thumb_window, width=event.width)
+
+
 thumb_canvas.bind("<Configure>", _canvas_cfg)
 
 _THUMB_CACHE = {}
+
 
 def make_thumbnail(path, size=(220, 140)):
     key = (path, size)
@@ -1959,10 +2271,11 @@ def make_thumbnail(path, size=(220, 140)):
     except Exception:
         return None
 
+
 def show_full_preview(img_paths, start_index=0):
     if not img_paths:
         return
-    idx = max(0, min(start_index, len(img_paths)-1))
+    idx = max(0, min(start_index, len(img_paths) - 1))
 
     top = tk.Toplevel(root)
     top.title("Screenshot Preview")
@@ -1972,20 +2285,23 @@ def show_full_preview(img_paths, start_index=0):
     img_label.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     info_var = tk.StringVar()
-    ttk.Label(top, textvariable=info_var).pack(pady=(0,6))
+    ttk.Label(top, textvariable=info_var).pack(pady=(0, 6))
 
     btns = ttk.Frame(top)
     btns.pack(pady=6)
+
     def do_prev():
         nonlocal idx
         if idx > 0:
             idx -= 1
             render()
+
     def do_next():
         nonlocal idx
-        if idx < len(img_paths)-1:
+        if idx < len(img_paths) - 1:
             idx += 1
             render()
+
     ttk.Button(btns, text="◀ Prev", command=do_prev).pack(side=tk.LEFT, padx=4)
     ttk.Button(btns, text="Next ▶", command=do_next).pack(side=tk.LEFT, padx=4)
 
@@ -1995,29 +2311,33 @@ def show_full_preview(img_paths, start_index=0):
             os.startfile(os.path.dirname(p))
         except Exception:
             messagebox.showinfo("Open", os.path.dirname(p))
-    ttk.Button(btns, text="Open in Folder", command=open_in_folder).pack(side=tk.LEFT, padx=8)
+
+    ttk.Button(btns, text="Open in Folder",
+               command=open_in_folder).pack(side=tk.LEFT, padx=8)
 
     def export_copy():
         p = img_paths[idx]
         out = filedialog.asksaveasfilename(
             defaultextension=os.path.splitext(p)[1],
             initialfile=os.path.basename(p),
-            filetypes=[("Images", "*.jpg;*.jpeg;*.png;*.bmp"), ("All files", "*.*")]
-        )
+            filetypes=[("Images", "*.jpg;*.jpeg;*.png;*.bmp"),
+                       ("All files", "*.*")])
         if out:
             try:
                 shutil.copy2(p, out)
                 messagebox.showinfo("Exported", f"Saved to:\n{out}")
             except Exception as e:
                 messagebox.showerror("Export error", str(e))
-    ttk.Button(btns, text="Export…", command=export_copy).pack(side=tk.LEFT, padx=8)
+
+    ttk.Button(btns, text="Export…", command=export_copy).pack(side=tk.LEFT,
+                                                               padx=8)
 
     def render():
         p = img_paths[idx]
         try:
             im = Image.open(p)
-            w = max(300, top.winfo_width()-80)
-            h = max(200, top.winfo_height()-160)
+            w = max(300, top.winfo_width() - 80)
+            h = max(200, top.winfo_height() - 160)
             im.thumbnail((w, h), Image.LANCZOS)
             ph = ImageTk.PhotoImage(im)
             img_label.configure(image=ph)
@@ -2026,19 +2346,25 @@ def show_full_preview(img_paths, start_index=0):
             img_label.configure(text=f"(Failed to load)\n{e}")
             img_label.image = None
 
-        ts = datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
-        info_var.set(f"{os.path.basename(p)}    {ts}    {os.path.getsize(p)/1024:.0f} KB   [{idx+1}/{len(img_paths)}]")
+        ts = datetime.fromtimestamp(
+            os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
+        info_var.set(
+            f"{os.path.basename(p)}    {ts}    {os.path.getsize(p)/1024:.0f} KB   [{idx+1}/{len(img_paths)}]"
+        )
 
     top.bind("<Left>", lambda e: (do_prev(), "break"))
     top.bind("<Right>", lambda e: (do_next(), "break"))
     top.after(50, render)
+
 
 def populate_thumbnails(img_paths):
     for child in list(thumb_inner.children.values()):
         child.destroy()
 
     if not img_paths:
-        ttk.Label(thumb_inner, text="No screenshots found in this album.", bootstyle="secondary").pack(pady=16)
+        ttk.Label(thumb_inner,
+                  text="No screenshots found in this album.",
+                  bootstyle="secondary").pack(pady=16)
         return
 
     cols = 3
@@ -2061,11 +2387,13 @@ def populate_thumbnails(img_paths):
 
         def _open_preview(event, idx=i):
             show_full_preview(img_paths, start_index=idx)
+
         lbl.bind("<Button-1>", _open_preview)
         meta.bind("<Button-1>", _open_preview)
 
     for c in range(cols):
         thumb_inner.grid_columnconfigure(c, weight=1)
+
 
 def refresh_screenshots():
     root_dir = shots_path_var.get().strip()
@@ -2091,7 +2419,9 @@ def refresh_screenshots():
         album_list.selection_clear(0, tk.END)
         album_list.selection_set(0)
         album_list.event_generate("<<ListboxSelect>>")
+
     root.after(10, show_first_album)
+
 
 def _on_album_select(event=None):
     root_dir = shots_path_var.get().strip()
@@ -2107,6 +2437,7 @@ def _on_album_select(event=None):
     imgs = list_album_images(album_path)
     populate_thumbnails(imgs)
 
+
 album_list.bind("<<ListboxSelect>>", _on_album_select)
 
 explorer_split = ttk.PanedWindow(explorer_tab, orient=tk.HORIZONTAL)
@@ -2116,7 +2447,9 @@ folder_tree = ttk.Treeview(explorer_split)
 folder_tree.pack(fill=tk.BOTH, expand=True)
 explorer_split.add(folder_tree, weight=1)
 
-file_list = ttk.Treeview(explorer_split, columns=("Name", "Size", "Modified"), show="headings")
+file_list = ttk.Treeview(explorer_split,
+                         columns=("Name", "Size", "Modified"),
+                         show="headings")
 file_list.heading("Name", text="Name")
 file_list.heading("Size", text="Size (KB)")
 file_list.heading("Modified", text="Modified")
@@ -2136,14 +2469,21 @@ left_panel = ttk.Frame(bundle_split, width=260, padding=(4, 6))
 left_panel.pack_propagate(False)
 bundle_split.add(left_panel, weight=1)
 
-ttk.Label(left_panel, text="Bundles", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
+ttk.Label(left_panel, text="Bundles",
+          font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
 search_row = ttk.Frame(left_panel)
 search_row.pack(fill=tk.X, pady=(0, 6))
 
 bundle_search_var = tk.StringVar()
-ttk.Entry(search_row, textvariable=bundle_search_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
-ttk.Button(search_row, text="Clear", bootstyle="secondary-outline",
-           command=lambda: (bundle_search_var.set(""), refresh_bundles_list())).pack(side=tk.LEFT, padx=(6, 0))
+ttk.Entry(search_row, textvariable=bundle_search_var).pack(side=tk.LEFT,
+                                                           fill=tk.X,
+                                                           expand=True)
+ttk.Button(search_row,
+           text="Clear",
+           bootstyle="secondary-outline",
+           command=lambda:
+           (bundle_search_var.set(""), refresh_bundles_list())).pack(
+               side=tk.LEFT, padx=(6, 0))
 
 bundle_list_frame = ttk.Frame(left_panel)
 bundle_list_frame.pack(fill=tk.BOTH, expand=True)
@@ -2151,7 +2491,10 @@ bundle_list_frame.pack(fill=tk.BOTH, expand=True)
 bundle_list_scroll = ttk.Scrollbar(bundle_list_frame, orient="vertical")
 bundle_list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-bundle_list = tk.Listbox(bundle_list_frame, exportselection=False, height=20, yscrollcommand=bundle_list_scroll.set)
+bundle_list = tk.Listbox(bundle_list_frame,
+                         exportselection=False,
+                         height=20,
+                         yscrollcommand=bundle_list_scroll.set)
 bundle_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 bundle_list_scroll.config(command=bundle_list.yview)
 
@@ -2161,11 +2504,17 @@ if bundle_list.size() == 0:
 bundle_preview = ttk.Frame(bundle_split, padding=8)
 bundle_split.add(bundle_preview, weight=3)
 
-ttk.Label(bundle_preview, text="Bundle Preview", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 6))
-bundle_name_lbl = ttk.Label(bundle_preview, text="(Select a bundle)", bootstyle="secondary")
+ttk.Label(bundle_preview, text="Bundle Preview",
+          font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 6))
+bundle_name_lbl = ttk.Label(bundle_preview,
+                            text="(Select a bundle)",
+                            bootstyle="secondary")
 bundle_name_lbl.pack(anchor="w", pady=(0, 6))
 
-preview_tree = ttk.Treeview(bundle_preview, columns=("mod", "status"), show="headings", height=14)
+preview_tree = ttk.Treeview(bundle_preview,
+                            columns=("mod", "status"),
+                            show="headings",
+                            height=14)
 preview_tree.heading("mod", text="Mod Name")
 preview_tree.heading("status", text="Status")
 preview_tree.column("mod", width=280, anchor="w")
@@ -2173,10 +2522,12 @@ preview_tree.column("status", width=100, anchor="center")
 preview_tree.pack(fill=tk.BOTH, expand=True)
 
 bundle_stats = tk.StringVar(value="0 mods")
-ttk.Label(bundle_preview, textvariable=bundle_stats, bootstyle="info").pack(anchor="e", pady=(6, 0))
+ttk.Label(bundle_preview, textvariable=bundle_stats,
+          bootstyle="info").pack(anchor="e", pady=(6, 0))
 
 bundle_btns = ttk.Frame(bundles_tab, padding=6)
 bundle_btns.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
+
 
 def update_bundle_toolbar_state():
     has_selection = bool(bundle_list.curselection())
@@ -2184,21 +2535,38 @@ def update_bundle_toolbar_state():
         state = "normal" if has_selection else "disabled"
         btn.config(state=state)
 
+
 bundle_list.bind("<<ListboxSelect>>", lambda _: update_bundle_toolbar_state())
 
-create_btn = ttk.Button(bundle_btns, text="Create", bootstyle="success", command=bundle_create_dialog)
+create_btn = ttk.Button(bundle_btns,
+                        text="Create",
+                        bootstyle="success",
+                        command=bundle_create_dialog)
 create_btn.pack(side=tk.LEFT, padx=4)
 
-apply_btn = ttk.Button(bundle_btns, text="Apply", bootstyle="primary", command=bundle_apply, state="disabled")
+apply_btn = ttk.Button(bundle_btns,
+                       text="Apply",
+                       bootstyle="primary",
+                       command=bundle_apply,
+                       state="disabled")
 apply_btn.pack(side=tk.LEFT, padx=4)
 
-delete_btn = ttk.Button(bundle_btns, text="Delete", bootstyle="info", command=bundle_delete, state="disabled")
+delete_btn = ttk.Button(bundle_btns,
+                        text="Delete",
+                        bootstyle="info",
+                        command=bundle_delete,
+                        state="disabled")
 delete_btn.pack(side=tk.LEFT, padx=4)
 
-ttk.Button(bundle_btns, text="Export JSON", command=bundle_export_json).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Import JSON", command=bundle_import_json).pack(side=tk.LEFT, padx=4)
-ttk.Button(bundle_btns, text="Export Bundle as Mod (.z2f)", bootstyle="success",
+ttk.Button(bundle_btns, text="Export JSON",
+           command=bundle_export_json).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns, text="Import JSON",
+           command=bundle_import_json).pack(side=tk.LEFT, padx=4)
+ttk.Button(bundle_btns,
+           text="Export Bundle as Mod (.z2f)",
+           bootstyle="success",
            command=bundle_export_z2f).pack(side=tk.LEFT, padx=4)
+
 
 def update_bundle_toolbar_state():
     sel = bundle_list.curselection()
@@ -2206,19 +2574,33 @@ def update_bundle_toolbar_state():
     apply_btn.config(state="normal" if has_selection else "disabled")
     delete_btn.config(state="normal" if has_selection else "disabled")
 
-bundle_list.bind("<<ListboxSelect>>", lambda _: (refresh_bundle_preview(), update_bundle_toolbar_state()))
+
+bundle_list.bind(
+    "<<ListboxSelect>>", lambda _:
+    (refresh_bundle_preview(), update_bundle_toolbar_state()))
 
 preview_btns = ttk.Frame(bundle_preview)
 preview_btns.pack(fill=tk.X, pady=(6, 0))
-ttk.Button(preview_btns, text="Apply Bundle", command=lambda: bundle_apply(), bootstyle="primary").pack(side=tk.LEFT, padx=4)
-ttk.Button(preview_btns, text="Enable All", command=lambda: bundle_enable_all(), bootstyle="success").pack(side=tk.LEFT, padx=4)
-ttk.Button(preview_btns, text="Disable All", command=lambda: bundle_disable_all(), bootstyle="warning").pack(side=tk.LEFT, padx=4)
+ttk.Button(preview_btns,
+           text="Apply Bundle",
+           command=lambda: bundle_apply(),
+           bootstyle="primary").pack(side=tk.LEFT, padx=4)
+ttk.Button(preview_btns,
+           text="Enable All",
+           command=lambda: bundle_enable_all(),
+           bootstyle="success").pack(side=tk.LEFT, padx=4)
+ttk.Button(preview_btns,
+           text="Disable All",
+           command=lambda: bundle_disable_all(),
+           bootstyle="warning").pack(side=tk.LEFT, padx=4)
+
 
 def _selected_bundle_name():
     sel = bundle_list.curselection()
     if not sel:
         return None
     return bundle_list.get(sel[0])
+
 
 def refresh_bundles_list():
     global _all_bundle_names_cache
@@ -2227,13 +2609,16 @@ def refresh_bundles_list():
     _all_bundle_names_cache = names[:]
     _apply_bundle_filter()
 
+
 def _apply_bundle_filter(*_):
     query = bundle_search_var.get().strip().lower()
     bundle_list.delete(0, tk.END)
 
     filtered = [n for n in _all_bundle_names_cache if query in n.lower()]
     if not filtered:
-        bundle_list.insert(tk.END, "(No bundles yet)" if not _all_bundle_names_cache else "(No matches)")
+        bundle_list.insert(
+            tk.END, "(No bundles yet)"
+            if not _all_bundle_names_cache else "(No matches)")
         bundle_name_lbl.config(text="(Select a bundle)")
         for i in preview_tree.get_children():
             preview_tree.delete(i)
@@ -2242,6 +2627,7 @@ def _apply_bundle_filter(*_):
 
     for n in filtered:
         bundle_list.insert(tk.END, n)
+
 
 def refresh_bundle_preview(event=None):
     name = _selected_bundle_name()
@@ -2256,19 +2642,21 @@ def refresh_bundle_preview(event=None):
     for i in preview_tree.get_children():
         preview_tree.delete(i)
 
-    cursor.execute("SELECT id FROM bundles WHERE name=?", (name,))
+    cursor.execute("SELECT id FROM bundles WHERE name=?", (name, ))
     row = cursor.fetchone()
     if not row:
         bundle_stats.set("0 mods")
         return
 
     bundle_id = row[0]
-    cursor.execute("SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name", (bundle_id,))
+    cursor.execute(
+        "SELECT mod_name FROM bundle_mods WHERE bundle_id=? ORDER BY mod_name",
+        (bundle_id, ))
     mods = [r[0] for r in cursor.fetchall()]
 
     enabled_count = 0
     for m in mods:
-        cursor.execute("SELECT enabled FROM mods WHERE name=?", (m,))
+        cursor.execute("SELECT enabled FROM mods WHERE name=?", (m, ))
         r = cursor.fetchone()
         status = "Enabled" if r and r[0] else "Disabled"
         if status == "Enabled":
@@ -2277,7 +2665,9 @@ def refresh_bundle_preview(event=None):
 
     bundle_stats.set(f"{enabled_count}/{len(mods)} enabled")
 
+
 bundle_list.bind("<<ListboxSelect>>", refresh_bundle_preview)
+
 
 def _bundle_context_menu(event):
     idx = bundle_list.nearest(event.y)
@@ -2297,7 +2687,9 @@ def _bundle_context_menu(event):
     finally:
         menu.grab_release()
 
+
 bundle_list.bind("<Button-3>", _bundle_context_menu)
+
 
 def bundle_enable_all():
     name = _selected_bundle_name()
@@ -2310,6 +2702,7 @@ def bundle_enable_all():
     refresh_bundle_preview()
     refresh_tree()
 
+
 def bundle_disable_all():
     name = _selected_bundle_name()
     if not name or name.startswith("("):
@@ -2320,6 +2713,7 @@ def bundle_disable_all():
         disable_mod(m, text_widget=log_text)
     refresh_bundle_preview()
     refresh_tree()
+
 
 refresh_bundles_list()
 
@@ -2336,16 +2730,30 @@ status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 online_tab = ttk.Frame(notebook, padding=10)
 notebook.add(online_tab, text="Online")
 
-connection_frame = ttk.Labelframe(online_tab, text="Connection Info", padding=8)
+connection_frame = ttk.Labelframe(online_tab,
+                                  text="Connection Info",
+                                  padding=8)
 connection_frame.pack(fill="x", pady=(0, 8))
 
 local_ip_var = tk.StringVar(value="Local IP: —")
 public_ip_var = tk.StringVar(value="Public IP: —")
 port_var = tk.StringVar(value="Port: —")
 
-ttk.Label(connection_frame, textvariable=local_ip_var).grid(row=0, column=0, sticky="w", padx=6, pady=2)
-ttk.Label(connection_frame, textvariable=public_ip_var).grid(row=1, column=0, sticky="w", padx=6, pady=2)
-ttk.Label(connection_frame, textvariable=port_var).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+ttk.Label(connection_frame, textvariable=local_ip_var).grid(row=0,
+                                                            column=0,
+                                                            sticky="w",
+                                                            padx=6,
+                                                            pady=2)
+ttk.Label(connection_frame, textvariable=public_ip_var).grid(row=1,
+                                                             column=0,
+                                                             sticky="w",
+                                                             padx=6,
+                                                             pady=2)
+ttk.Label(connection_frame, textvariable=port_var).grid(row=2,
+                                                        column=0,
+                                                        sticky="w",
+                                                        padx=6,
+                                                        pady=2)
 
 status_var = tk.StringVar(value="Status: Idle")
 status_label = ttk.Label(online_tab, textvariable=status_var, justify="left")
@@ -2357,9 +2765,18 @@ session_frame.pack(fill="x", pady=(0, 8))
 button_row = ttk.Frame(session_frame)
 button_row.pack(fill="x", pady=4)
 
-ttk.Button(button_row, text="Host Session", bootstyle="success", command=lambda: host_session()).pack(side="left", padx=6)
-ttk.Button(button_row, text="Stop Hosting", bootstyle="danger", command=stop_host).pack(side="left", padx=6)
-ttk.Button(button_row, text="Join Session", bootstyle="primary", command=lambda: join_session_dialog()).pack(side="left", padx=6)
+ttk.Button(button_row,
+           text="Host Session",
+           bootstyle="success",
+           command=lambda: host_session()).pack(side="left", padx=6)
+ttk.Button(button_row,
+           text="Stop Hosting",
+           bootstyle="danger",
+           command=stop_host).pack(side="left", padx=6)
+ttk.Button(button_row,
+           text="Join Session",
+           bootstyle="primary",
+           command=lambda: join_session_dialog()).pack(side="left", padx=6)
 
 clients_frame = ttk.Labelframe(online_tab, text="Connected Clients", padding=8)
 clients_frame.pack(fill="both", expand=True)
@@ -2368,55 +2785,60 @@ clients_listbox = tk.Listbox(clients_frame, height=8)
 clients_listbox.pack(fill="both", expand=True, padx=6, pady=4)
 
 zoo_state_var = tk.StringVar(value="Zoo State: Waiting for updates...")
-zoo_state_label = ttk.Label(
-    online_tab,
-    textvariable=zoo_state_var,
-    font=("Segoe UI", 9),
-    justify="left"
-)
+zoo_state_label = ttk.Label(online_tab,
+                            textvariable=zoo_state_var,
+                            font=("Segoe UI", 9),
+                            justify="left")
 zoo_state_label.pack(anchor="w", padx=10, pady=(4, 10))
 
-def update_connection_info_now():
-    def on_info(local, public, port):
-        online_tab.after(0, lambda: (
-            local_ip_var.set(f"Local IP: {local}"),
-            public_ip_var.set(f"Public IP: {public}"),
-            port_var.set(f"Port: {port}")
-        ))
-    try:
-        online_manager.get_connection_info(callback=on_info)
-    except Exception as e:
-        online_tab.after(0, lambda: (
-            local_ip_var.set("Local IP: Error"),
-            public_ip_var.set(f"Public IP: {e}"),
-            port_var.set("Port: —")
-        ))
 
 def update_connection_info_now():
+
     def on_info(local, public, port):
-        online_tab.after(0, lambda: (
-            local_ip_var.set(f"Local IP: {local}"),
-            public_ip_var.set(f"Public IP: {public}"),
-            port_var.set(f"Port: {port}")
-        ))
+        online_tab.after(
+            0, lambda: (local_ip_var.set(f"Local IP: {local}"),
+                        public_ip_var.set(f"Public IP: {public}"),
+                        port_var.set(f"Port: {port}")))
+
     try:
         online_manager.get_connection_info(callback=on_info)
     except Exception as e:
-        online_tab.after(0, lambda: (
-            local_ip_var.set("Local IP: Error"),
-            public_ip_var.set(f"Public IP: {e}"),
-            port_var.set("Port: —")
-        ))
+        online_tab.after(
+            0, lambda:
+            (local_ip_var.set("Local IP: Error"),
+             public_ip_var.set(f"Public IP: {e}"), port_var.set("Port: —")))
+
+
+def update_connection_info_now():
+
+    def on_info(local, public, port):
+        online_tab.after(
+            0, lambda: (local_ip_var.set(f"Local IP: {local}"),
+                        public_ip_var.set(f"Public IP: {public}"),
+                        port_var.set(f"Port: {port}")))
+
+    try:
+        online_manager.get_connection_info(callback=on_info)
+    except Exception as e:
+        online_tab.after(
+            0, lambda:
+            (local_ip_var.set("Local IP: Error"),
+             public_ip_var.set(f"Public IP: {e}"), port_var.set("Port: —")))
+
 
 def refresh_connection_info():
+
     def loop():
         while True:
             update_connection_info_now()
             time.sleep(5)
+
     threading.Thread(target=loop, daemon=True).start()
+
 
 refresh_connection_info()
 update_connection_info_now()
+
 
 def update_client_list(clients):
     clients_listbox.delete(0, tk.END)
@@ -2426,15 +2848,19 @@ def update_client_list(clients):
     for addr in clients:
         clients_listbox.insert(tk.END, f"{addr[0]}:{addr[1]}")
 
+
 online_manager.set_client_update_callback(update_client_list)
+
 
 def update_zoo_state_ui(diff):
     summary = " | ".join(f"{k.capitalize()}: {v}" for k, v in diff.items())
     zoo_state_var.set(f"Zoo State: {summary}")
 
+
 state_manager.set_ui_callback(update_zoo_state_ui)
 
 update_connection_info_now()
+
 
 def refresh_tree():
     """Rebuilds mod list UI from both filesystem and DB."""
@@ -2456,10 +2882,12 @@ def refresh_tree():
 
     for mod, enabled_flag in found_mods.items():
         if mod not in db_mods:
-            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod, enabled_flag))
+            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)",
+                           (mod, enabled_flag))
     conn.commit()
 
-    cursor.execute("SELECT name, enabled FROM mods ORDER BY enabled DESC, name ASC")
+    cursor.execute(
+        "SELECT name, enabled FROM mods ORDER BY enabled DESC, name ASC")
     mods = cursor.fetchall()
 
     total = len(mods)
@@ -2471,31 +2899,29 @@ def refresh_tree():
         exists = path and os.path.isfile(path)
 
         size_mb = os.path.getsize(path) / (1024 * 1024) if exists else 0
-        modified = (
-            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path)))
-            if exists else "N/A"
-        )
+        modified = (time.strftime("%Y-%m-%d %H:%M:%S",
+                                  time.localtime(os.path.getmtime(path)))
+                    if exists else "N/A")
 
-        status = (
-            "🟢 Enabled" if enabled_flag else
-            ("🟡 Missing" if not exists else "🔴 Disabled")
-        )
+        status = ("🟢 Enabled" if enabled_flag else
+                  ("🟡 Missing" if not exists else "🔴 Disabled"))
 
-        mods_tree.insert(
-            "",
-            tk.END,
-            values=(name, status, f"{size_mb:.2f}", modified),
-            tags=("enabled" if enabled_flag else ("missing" if not exists else "disabled"),)
-        )
+        mods_tree.insert("",
+                         tk.END,
+                         values=(name, status, f"{size_mb:.2f}", modified),
+                         tags=("enabled" if enabled_flag else
+                               ("missing" if not exists else "disabled"), ))
 
     mod_count_label.config(
-        text=f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
+        text=
+        f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
     )
 
     apply_tree_theme()
     refresh_bundles_list()
 
     print(f"[ModZT] Refreshed mod list ({total} mods found).")
+
 
 def sort_tree_by(column):
     if sort_state["column"] == column:
@@ -2536,8 +2962,7 @@ def sort_tree_by(column):
             tag = "missing"
         else:
             tag = "disabled"
-        mods_tree.insert("", tk.END, values=r, tags=(tag,))
-
+        mods_tree.insert("", tk.END, values=r, tags=(tag, ))
 
     apply_tree_theme()
 
@@ -2545,22 +2970,31 @@ def sort_tree_by(column):
         arrow = ""
         if col == column:
             arrow = "▼" if sort_state["reverse"] else "▲"
-        mods_tree.heading(col, text=f"{col} {arrow}", command=lambda c=col: sort_tree_by(c))
+        mods_tree.heading(col,
+                          text=f"{col} {arrow}",
+                          command=lambda c=col: sort_tree_by(c))
+
 
 def populate_folder_tree(parent_node, path):
     for item in os.listdir(path):
         full_path = os.path.join(path, item)
         if os.path.isdir(full_path):
-            node = folder_tree.insert(parent_node, "end", text=item, values=[full_path])
+            node = folder_tree.insert(parent_node,
+                                      "end",
+                                      text=item,
+                                      values=[full_path])
             folder_tree.insert(node, "end", text="Loading...")
+
 
 def on_open_folder(event):
     node = folder_tree.focus()
     children = folder_tree.get_children(node)
-    if len(children) == 1 and folder_tree.item(children[0], "text") == "Loading...":
+    if len(children) == 1 and folder_tree.item(children[0],
+                                               "text") == "Loading...":
         folder_tree.delete(children[0])
         path = folder_tree.item(node, "values")[0]
         populate_folder_tree(node, path)
+
 
 def on_select_folder(event):
     node = folder_tree.focus()
@@ -2574,8 +3008,10 @@ def on_select_folder(event):
         fp = os.path.join(path, f)
         if os.path.isfile(fp):
             size_kb = os.path.getsize(fp) / 1024
-            modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(fp)))
+            modified = time.strftime("%Y-%m-%d %H:%M:%S",
+                                     time.localtime(os.path.getmtime(fp)))
             file_list.insert("", "end", values=(f, f"{size_kb:.1f}", modified))
+
 
 def load_explorer_roots():
     if not GAME_PATH:
@@ -2584,8 +3020,12 @@ def load_explorer_roots():
     for folder_name in ["Mods", os.path.join("Mods", "Disabled")]:
         full_path = os.path.join(GAME_PATH, folder_name)
         if os.path.isdir(full_path):
-            node = folder_tree.insert("", "end", text=folder_name, values=[full_path])
+            node = folder_tree.insert("",
+                                      "end",
+                                      text=folder_name,
+                                      values=[full_path])
             folder_tree.insert(node, "end", text="Loading...")
+
 
 def apply_tree_theme():
     if root.style.theme_use() == 'darkly':
@@ -2596,6 +3036,7 @@ def apply_tree_theme():
         mods_tree.tag_configure('enabled', foreground='#007f00')
         mods_tree.tag_configure('disabled', foreground='#b30000')
         mods_tree.tag_configure('missing', foreground='#c48f00')
+
 
 def apply_ui_mode():
     compact = ui_mode["compact"]
@@ -2622,6 +3063,7 @@ def apply_ui_mode():
 
     refresh_tree()
 
+
 def get_selected_mod():
     sel = mods_tree.selection()
     if not sel:
@@ -2629,10 +3071,12 @@ def get_selected_mod():
         return None
     return mods_tree.item(sel[0])['values'][0]
 
+
 def enable_selected_mod():
     mod = get_selected_mod()
     if mod:
         enable_mod(mod, text_widget=log_text)
+
 
 def disable_selected_mod():
     sel = mods_tree.selection()
@@ -2640,6 +3084,7 @@ def disable_selected_mod():
     if mod:
         disable_mod(mod, text_widget=log_text)
         root.after(100, lambda: restore_selection(mod))
+
 
 def restore_selection(mod_name):
     for iid in mods_tree.get_children():
@@ -2650,10 +3095,13 @@ def restore_selection(mod_name):
             mods_tree.see(iid)
             break
 
+
 def save_tree_state(tree):
     sel = tree.selection()
-    first_visible = tree.index(tree.identify_row(0)) if tree.get_children() else 0
+    first_visible = tree.index(
+        tree.identify_row(0)) if tree.get_children() else 0
     return {"sel": sel, "first_visible": first_visible}
+
 
 def restore_tree_state(tree, state):
     if not state:
@@ -2671,26 +3119,33 @@ def restore_tree_state(tree, state):
         except IndexError:
             pass
 
+
 def uninstall_selected_mod():
     mod = get_selected_mod()
     if mod:
         if messagebox.askyesno("Uninstall", f"Uninstall {mod}?"):
             uninstall_mod(mod, text_widget=log_text)
 
+
 def open_mod_folder():
     mod = get_selected_mod()
     if not mod:
         return
-    paths = [os.path.join(GAME_PATH, mod), os.path.join(mods_disabled_dir(), mod)]
+    paths = [
+        os.path.join(GAME_PATH, mod),
+        os.path.join(mods_disabled_dir(), mod)
+    ]
     for p in paths:
         if os.path.isfile(p):
             try:
                 os.startfile(os.path.dirname(p))
                 return
             except Exception:
-                messagebox.showinfo("Open", f"Mod located at: {os.path.dirname(p)}")
+                messagebox.showinfo("Open",
+                                    f"Mod located at: {os.path.dirname(p)}")
                 return
     messagebox.showinfo("Not Found", f"Could not find {mod} on disk.")
+
 
 def inspect_selected_mod():
     mod = get_selected_mod()
@@ -2709,7 +3164,9 @@ def inspect_selected_mod():
     frame = ttk.Frame(dlg, padding=8)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text=f"📦 Contents of {mod}", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 8))
+    ttk.Label(frame,
+              text=f"📦 Contents of {mod}",
+              font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 8))
 
     tree = ttk.Treeview(frame, columns=("size", "compressed"), show="headings")
     tree.heading("size", text="Size (KB)")
@@ -2727,7 +3184,10 @@ def inspect_selected_mod():
             for info in zf.infolist():
                 size_kb = info.file_size / 1024
                 comp_kb = info.compress_size / 1024
-                tree.insert("", tk.END, values=(info.filename, f"{size_kb:.1f}", f"{comp_kb:.1f}"))
+                tree.insert("",
+                            tk.END,
+                            values=(info.filename, f"{size_kb:.1f}",
+                                    f"{comp_kb:.1f}"))
     except zipfile.BadZipFile:
         messagebox.showerror("Error", "This mod file is not a valid Z2F file.")
         dlg.destroy()
@@ -2735,8 +3195,13 @@ def inspect_selected_mod():
 
     btns = ttk.Frame(dlg, padding=6)
     btns.pack(fill=tk.X)
-    ttk.Button(btns, text="Extract to Folder", command=lambda: extract_zip_contents(path)).pack(side=tk.LEFT, padx=4)
-    ttk.Button(btns, text="Close", command=dlg.destroy).pack(side=tk.RIGHT, padx=4)
+    ttk.Button(btns,
+               text="Extract to Folder",
+               command=lambda: extract_zip_contents(path)).pack(side=tk.LEFT,
+                                                                padx=4)
+    ttk.Button(btns, text="Close", command=dlg.destroy).pack(side=tk.RIGHT,
+                                                             padx=4)
+
 
 def extract_zip_contents(path):
     out_dir = filedialog.askdirectory(title="Select destination folder")
@@ -2750,6 +3215,7 @@ def extract_zip_contents(path):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to extract:\n{e}")
 
+
 def show_mod_details():
     mod = get_selected_mod()
     if not mod:
@@ -2761,9 +3227,12 @@ def show_mod_details():
         return
 
     size_mb = os.path.getsize(path) / (1024 * 1024)
-    modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path)))
+    modified = time.strftime("%Y-%m-%d %H:%M:%S",
+                             time.localtime(os.path.getmtime(path)))
 
-    cursor.execute("SELECT b.name FROM bundles b JOIN bundle_mods bm ON b.id=bm.bundle_id WHERE bm.mod_name=?", (mod,))
+    cursor.execute(
+        "SELECT b.name FROM bundles b JOIN bundle_mods bm ON b.id=bm.bundle_id WHERE bm.mod_name=?",
+        (mod, ))
     bundle_rows = cursor.fetchall()
     bundle_names = [r[0] for r in bundle_rows] if bundle_rows else []
 
@@ -2772,7 +3241,8 @@ def show_mod_details():
         import zipfile
         with zipfile.ZipFile(path, 'r') as zf:
             for name in zf.namelist():
-                if "readme" in name.lower() and name.lower().endswith((".txt", ".md")):
+                if "readme" in name.lower() and name.lower().endswith(
+                    (".txt", ".md")):
                     with zf.open(name) as f:
                         data = f.read().decode("utf-8", errors="ignore")
                         readme_text = data[:2000]
@@ -2788,18 +3258,25 @@ def show_mod_details():
     frame = ttk.Frame(dlg, padding=10)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(frame, text=f"🧩 {mod}", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0,6))
-    ttk.Label(frame, text=f"Path: {path}", wraplength=560).pack(anchor="w", pady=(0,3))
+    ttk.Label(frame, text=f"🧩 {mod}",
+              font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 6))
+    ttk.Label(frame, text=f"Path: {path}", wraplength=560).pack(anchor="w",
+                                                                pady=(0, 3))
     ttk.Label(frame, text=f"Size: {size_mb:.2f} MB").pack(anchor="w")
-    ttk.Label(frame, text=f"Last Modified: {modified}").pack(anchor="w", pady=(0,5))
+    ttk.Label(frame, text=f"Last Modified: {modified}").pack(anchor="w",
+                                                             pady=(0, 5))
 
     if bundle_names:
-        ttk.Label(frame, text="Included in Bundles:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(4,0))
-        ttk.Label(frame, text=", ".join(bundle_names), wraplength=560).pack(anchor="w", pady=(0,5))
+        ttk.Label(frame,
+                  text="Included in Bundles:",
+                  font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(4, 0))
+        ttk.Label(frame, text=", ".join(bundle_names),
+                  wraplength=560).pack(anchor="w", pady=(0, 5))
 
     ttk.Separator(frame).pack(fill=tk.X, pady=8)
 
-    ttk.Label(frame, text="Readme Preview:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(frame, text="Readme Preview:",
+              font=("Segoe UI", 10, "bold")).pack(anchor="w")
     txt = tk.Text(frame, height=15, wrap="word")
     txt.pack(fill=tk.BOTH, expand=True)
     txt.insert(tk.END, readme_text or "(No readme found in mod)")
@@ -2807,10 +3284,12 @@ def show_mod_details():
 
     ttk.Button(frame, text="Close", command=dlg.destroy).pack(pady=8)
 
+
 def refresh_bundles_list():
     bundle_list.delete(0, tk.END)
     for name, mods in get_bundles():
         bundle_list.insert(tk.END, f"{name}")
+
 
 def get_selected_bundle_name():
     sel = bundle_list.curselection()
@@ -2818,18 +3297,21 @@ def get_selected_bundle_name():
         messagebox.showinfo("Select", "Select a bundle first.", parent=root)
         return None
     text = bundle_list.get(sel[0])
-    return text.rsplit(' (',1)[0]
+    return text.rsplit(' (', 1)[0]
+
 
 def on_create_bundle():
     dlg = tk.Toplevel(root)
     dlg.title("Create Bundle")
     dlg.geometry("420x480")
 
-    ttk.Label(dlg, text="Bundle name:").pack(anchor='w', padx=6, pady=(6,0))
+    ttk.Label(dlg, text="Bundle name:").pack(anchor='w', padx=6, pady=(6, 0))
     name_var = tk.StringVar()
     ttk.Entry(dlg, textvariable=name_var).pack(fill=tk.X, padx=6)
 
-    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w', padx=6, pady=(6,0))
+    ttk.Label(dlg, text="Select mods to include:").pack(anchor='w',
+                                                        padx=6,
+                                                        pady=(6, 0))
     mods_listbox = tk.Listbox(dlg, selectmode=tk.MULTIPLE)
     mods_listbox.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
     cursor.execute("SELECT name FROM mods ORDER BY name")
@@ -2842,11 +3324,15 @@ def on_create_bundle():
         sel = mods_listbox.curselection()
         selected = [mods[i] for i in sel]
         if not bname or not selected:
-            messagebox.showerror("Invalid", "Provide a name and select at least one mod.", parent=dlg)
+            messagebox.showerror("Invalid",
+                                 "Provide a name and select at least one mod.",
+                                 parent=dlg)
             return
         ok = create_bundle(bname, selected)
         if not ok:
-            messagebox.showerror("Error", "Bundle name already exists or invalid.", parent=dlg)
+            messagebox.showerror("Error",
+                                 "Bundle name already exists or invalid.",
+                                 parent=dlg)
             return
         dlg.destroy()
         refresh_bundles_list()
@@ -2854,7 +3340,9 @@ def on_create_bundle():
 
     ttk.Button(dlg, text="Create", command=do_create).pack(padx=6, pady=6)
 
+
 on_create_bundle = on_create_bundle
+
 
 def on_delete_bundle():
     name = get_selected_bundle_name()
@@ -2865,6 +3353,7 @@ def on_delete_bundle():
         refresh_bundles_list()
         log(f"Deleted bundle: {name}", log_text)
 
+
 def on_apply_bundle():
     name = get_selected_bundle_name()
     if not name:
@@ -2872,15 +3361,18 @@ def on_apply_bundle():
     apply_bundle(name, text_widget=log_text)
     refresh_tree()
 
+
 def on_export_bundle():
     name = get_selected_bundle_name()
     if not name:
         return
     export_bundle_as_json(name)
 
+
 def on_import_bundle():
     import_bundle_from_json()
     refresh_bundles_list()
+
 
 def on_export_bundle_as_mod():
     name = get_selected_bundle_name()
@@ -2888,10 +3380,16 @@ def on_export_bundle_as_mod():
         return
     export_bundle_as_mod_ui(name)
 
+
 def update_status():
-    status_label.config(text=f"ZT2 path: {GAME_PATH or '(not set)'} | {enabled_count()} mods enabled")
+    status_label.config(
+        text=
+        f"ZT2 path: {GAME_PATH or '(not set)'} | {enabled_count()} mods enabled"
+    )
+
 
 search_var.trace_add('write', lambda *_: filter_tree())
+
 
 def filter_tree(*_):
     query = search_var.get().strip().lower()
@@ -2899,7 +3397,8 @@ def filter_tree(*_):
     for row in mods_tree.get_children():
         mods_tree.delete(row)
 
-    cursor.execute("SELECT name, enabled FROM mods ORDER BY enabled DESC, name ASC")
+    cursor.execute(
+        "SELECT name, enabled FROM mods ORDER BY enabled DESC, name ASC")
     mods = cursor.fetchall()
 
     visible_rows = []
@@ -2912,7 +3411,8 @@ def filter_tree(*_):
         modified = "N/A"
         if path and os.path.isfile(path):
             size_mb = os.path.getsize(path) / (1024 * 1024)
-            modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path)))
+            modified = time.strftime("%Y-%m-%d %H:%M:%S",
+                                     time.localtime(os.path.getmtime(path)))
 
         if enabled_flag:
             status = "🟢 Enabled"
@@ -2921,12 +3421,13 @@ def filter_tree(*_):
         else:
             status = "🔴 Disabled"
 
-        tag = (
-            "enabled" if enabled_flag else
-            ("missing" if not path or not os.path.isfile(path) else "disabled")
-        )
+        tag = ("enabled" if enabled_flag else (
+            "missing" if not path or not os.path.isfile(path) else "disabled"))
 
-        mods_tree.insert("", tk.END, values=(name, status, f"{size_mb:.2f}", modified), tags=(tag,))
+        mods_tree.insert("",
+                         tk.END,
+                         values=(name, status, f"{size_mb:.2f}", modified),
+                         tags=(tag, ))
 
         visible_rows.append(name)
 
@@ -2936,8 +3437,10 @@ def filter_tree(*_):
     enabled = sum(1 for _, e in mods if e)
     disabled = total - enabled
     mod_count_label.config(
-        text=f"Total mods: {len(visible_rows)} (Filtered) | Enabled: {enabled} | Disabled: {disabled}"
+        text=
+        f"Total mods: {len(visible_rows)} (Filtered) | Enabled: {enabled} | Disabled: {disabled}"
     )
+
 
 refresh_tree()
 apply_ui_mode()
@@ -2955,7 +3458,8 @@ if __name__ == '__main__':
         detected = auto_detect_zt2_installation()
         if detected:
             GAME_PATH = detected
-            log(f"✅ Detected Zoo Tycoon 2 installation at: {GAME_PATH}", log_text)
+            log(f"✅ Detected Zoo Tycoon 2 installation at: {GAME_PATH}",
+                log_text)
             try:
                 root.status_label.config(text=f"ZT2 path: {GAME_PATH}")
             except Exception:
@@ -2967,6 +3471,7 @@ if __name__ == '__main__':
     folder_tree.bind("<<TreeviewOpen>>", on_open_folder)
     folder_tree.bind("<<TreeviewSelect>>", on_select_folder)
 
+
 def on_close():
     try:
         conn.close()
@@ -2976,6 +3481,7 @@ def on_close():
     root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)
+
 
 load_explorer_roots()
 refresh_screenshots()
