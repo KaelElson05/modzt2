@@ -55,7 +55,6 @@ FILEMAP_CACHE = os.path.join(CONFIG_DIR, "mod_filemap.json")
 GITHUB_REPO = "kaelelson05/modzt"
 SERVER_URL = "http://localhost:5000"
 
-# ---------------- Global State ----------------
 GAME_PATH = None
 ZT1_PATH = None
 ZT1_MOD_DIR = None
@@ -120,6 +119,20 @@ def open_mods_folder():
     path = get_game_path()
     if path:
         os.startfile(path)
+
+def mods_enabled_dir():
+    if not GAME_PATH:
+        return None
+    path = os.path.join(GAME_PATH, "mods_enabled")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def mods_disabled_dir():
+    if not GAME_PATH:
+        return None
+    path = os.path.join(GAME_PATH, "mods_disabled")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 def resource_path(relative_path):
     try:
@@ -215,42 +228,6 @@ def auto_detect_zt2_installation():
                 return root
 
     return None
-
-def build_chat_ui(parent, is_host=False, client_sock=None):
-    chat_frame = ttk.Labelframe(parent, text="Chat", padding=8)
-    chat_frame.pack(fill="both", expand=True, pady=(8, 0))
-
-    chat_log = tk.Text(chat_frame, height=10, state="disabled", wrap="word")
-    chat_log.pack(fill="both", expand=True, padx=6, pady=4)
-
-    chat_entry = ttk.Entry(chat_frame)
-    chat_entry.pack(fill="x", padx=6, pady=(0, 4))
-
-    def append_chat(msg: str):
-        chat_log.configure(state="normal")
-        chat_log.insert("end", msg + "\n")
-        chat_log.configure(state="disabled")
-        chat_log.see("end")
-
-    def send_chat():
-        text = chat_entry.get().strip()
-        if not text:
-            return
-        append_chat(f"You: {text}")
-        chat_entry.delete(0, "end")
-
-        if is_host:
-            online_manager.broadcast_chat(text)
-        elif client_sock:
-            online_manager.send_chat_to_host(client_sock, text)
-        else:
-            append_chat("[!] Not connected to any session.")
-
-    chat_entry.bind("<Return>", lambda e: send_chat())
-
-    online_manager.set_chat_callback(lambda msg: append_chat(msg))
-
-    return chat_frame
 
 sort_state = {"column": "Name", "reverse": False}
 ui_mode = {"compact": False}
@@ -770,7 +747,7 @@ def index_mod_files(cursor=None, conn=None, force=False):
         if not os.path.isdir(folder):
             continue
         for f in os.listdir(folder):
-            if not (f.lower().endswith('.z2f') or f.lower().endswith('.zip')):
+            if not (f.lower().endswith('.z2f')):
                 continue
             if f.lower().endswith('.pac'):
                 continue
@@ -834,7 +811,7 @@ def backup_mods():
                 if not os.path.isdir(folder):
                     continue
                 for f in os.listdir(folder):
-                    if f.lower().endswith((".z2f", ".zip")):
+                    if f.lower().endswith((".z2f")):
                         fp = os.path.join(folder, f)
                         arcname = os.path.join("Enabled" if folder == GAME_PATH else "Disabled", f)
                         zf.write(fp, arcname)
@@ -894,7 +871,7 @@ def detect_existing_mods(cursor=None, conn=None):
         if not os.path.isdir(folder):
             continue
         for f in os.listdir(folder):
-            if not (f.lower().endswith('.z2f') or f.lower().endswith('.zip')):
+            if not (f.lower().endswith('.z2f')):
                 continue
             if f.lower().endswith('.pac'):
                 continue
@@ -935,76 +912,6 @@ def detect_existing_mods(cursor=None, conn=None):
             )
     except sqlite3.OperationalError:
         pass
-
-def install_mod(text_widget=None):
-    if not GAME_PATH:
-        messagebox.showerror("Error", "Set game path first!")
-        return
-    file_path = filedialog.askopenfilename(title="Select a .z2f Mod File", filetypes=[("ZT2 Mod", "*.z2f;*.zip"), ("All Files", "*.*")])
-    if not file_path:
-        return
-    mod_name = os.path.basename(file_path)
-    dest_dir = mods_disabled_dir()
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, mod_name)
-    try:
-        shutil.copy2(file_path, dest)
-        log(f"Installed mod: {mod_name} -> {dest}", text_widget)
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to install: {e}")
-        return
-    cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, 0)", (mod_name,))
-    else:
-        cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
-    conn.commit()
-    refresh_tree()
-    update_status()
-
-def install_mod_from_path(file_path, text_widget=None):
-    if not GAME_PATH:
-        messagebox.showerror("Error", "Set game path first!")
-        return
-
-    if not file_path or not os.path.isfile(file_path):
-        messagebox.showerror("Error", f"File not found:\n{file_path}")
-        return
-
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext not in (".z2f", ".zip"):
-        messagebox.showerror("Unsupported", f"Only .z2f or .zip mods are supported here.\nGot: {ext}")
-        return
-
-    mod_name = os.path.basename(file_path)
-    dest_dir = mods_disabled_dir()
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, mod_name)
-
-    try:
-        shutil.copy2(file_path, dest)
-        log(f"Installed (DnD) mod: {mod_name} -> {dest}", text_widget)
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to install: {e}")
-        return
-
-    cursor.execute("SELECT COUNT(*) FROM mods WHERE name=?", (mod_name,))
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, 0)", (mod_name,))
-    else:
-        cursor.execute("UPDATE mods SET enabled=0 WHERE name=?", (mod_name,))
-    conn.commit()
-
-    try:
-        h = file_hash(dest)
-        if h:
-            cursor.execute("UPDATE mods SET hash=? WHERE name=?", (h, mod_name))
-            conn.commit()
-    except Exception:
-        pass
-
-    refresh_tree()
-    update_status()
 
 def enable_mod(mod_name, text_widget=None):
     deps = get_dependencies(mod_name)
@@ -1130,7 +1037,7 @@ def watch_mods(root, refresh_func, interval=5):
             for folder in [GAME_PATH, disabled]:
                 if os.path.isdir(folder):
                     for f in os.listdir(folder):
-                        if f.lower().endswith('.z2f') or f.lower().endswith('.zip'):
+                        if f.lower().endswith('.z2f'):
                             found.add((f, 1 if folder == GAME_PATH else 0))
             if found != last_snapshot:
                 def update_db_and_refresh():
@@ -1959,9 +1866,7 @@ mods_tree.bind("<Button-3>", on_mod_right_click)
 mod_btns = ttk.Frame(mods_tab, padding=6)
 mod_btns.pack(fill=tk.X)
 
-install_btn = ttk.Button(mod_btns, text="Install Mod", command=lambda: (install_mod(text_widget=log_text), detect_existing_mods(), refresh_tree()), bootstyle="success")
-install_btn.pack(side=tk.LEFT, padx=4)
-enable_btn = ttk.Button(mod_btns, text="Enable", command=lambda: (enable_selected_mod(),), bootstyle="info")
+enable_btn = ttk.Button(mod_btns, text="Enable", command=lambda: (enable_selected_mod(),), bootstyle="success")
 enable_btn.pack(side=tk.LEFT, padx=4)
 disable_btn = ttk.Button(mod_btns, text="Disable", command=lambda: (disable_selected_mod(),), bootstyle="danger")
 disable_btn.pack(side=tk.LEFT, padx=4)
@@ -2532,40 +2437,65 @@ state_manager.set_ui_callback(update_zoo_state_ui)
 update_connection_info_now()
 
 def refresh_tree():
-    for row in mods_tree.get_children():
-        mods_tree.delete(row)
+    """Rebuilds mod list UI from both filesystem and DB."""
+    mods_tree.delete(*mods_tree.get_children())
+
+    enabled_dir = mods_enabled_dir()
+    disabled_dir = mods_disabled_dir()
+    os.makedirs(enabled_dir, exist_ok=True)
+    os.makedirs(disabled_dir, exist_ok=True)
+
+    found_mods = {}
+    for folder, enabled_flag in [(enabled_dir, 1), (disabled_dir, 0)]:
+        for f in os.listdir(folder):
+            if f.lower().endswith(".z2f"):
+                found_mods[f] = enabled_flag
+
+    cursor.execute("SELECT name FROM mods")
+    db_mods = {r[0] for r in cursor.fetchall()}
+
+    for mod, enabled_flag in found_mods.items():
+        if mod not in db_mods:
+            cursor.execute("INSERT INTO mods (name, enabled) VALUES (?, ?)", (mod, enabled_flag))
+    conn.commit()
 
     cursor.execute("SELECT name, enabled FROM mods ORDER BY enabled DESC, name ASC")
     mods = cursor.fetchall()
 
     total = len(mods)
-    enabled = sum(1 for _, e in mods if e)
-    disabled = total - enabled
+    enabled_count = sum(1 for _, e in mods if e)
+    disabled_count = total - enabled_count
 
-    rows = []
     for name, enabled_flag in mods:
         path = find_mod_file(name)
-        size_mb = os.path.getsize(path) / (1024 * 1024) if path and os.path.isfile(path) else 0
-        modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path))) if path and os.path.isfile(path) else "N/A"
-    
-        if enabled_flag:
-            status = "🟢 Enabled"
-        elif not find_mod_file(name):
-            status = "🟡 Missing"
-        else:
-            status = "🔴 Disabled"
+        exists = path and os.path.isfile(path)
 
-        r = (name, status, f"{size_mb:.2f}", modified)
-    
-        tag = (
-            'enabled' if enabled_flag else
-            ('missing' if not find_mod_file(name) else 'disabled')
+        size_mb = os.path.getsize(path) / (1024 * 1024) if exists else 0
+        modified = (
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(path)))
+            if exists else "N/A"
         )
-        mods_tree.insert("", tk.END, values=r, tags=(tag,))
 
-    mod_count_label.config(text=f"Total mods: {total} | Enabled: {enabled} | Disabled: {disabled}")
+        status = (
+            "🟢 Enabled" if enabled_flag else
+            ("🟡 Missing" if not exists else "🔴 Disabled")
+        )
+
+        mods_tree.insert(
+            "",
+            tk.END,
+            values=(name, status, f"{size_mb:.2f}", modified),
+            tags=("enabled" if enabled_flag else ("missing" if not exists else "disabled"),)
+        )
+
+    mod_count_label.config(
+        text=f"Total mods: {total} | Enabled: {enabled_count} | Disabled: {disabled_count}"
+    )
+
     apply_tree_theme()
     refresh_bundles_list()
+
+    print(f"[ModZT] Refreshed mod list ({total} mods found).")
 
 def sort_tree_by(column):
     if sort_state["column"] == column:
@@ -2799,7 +2729,7 @@ def inspect_selected_mod():
                 comp_kb = info.compress_size / 1024
                 tree.insert("", tk.END, values=(info.filename, f"{size_kb:.1f}", f"{comp_kb:.1f}"))
     except zipfile.BadZipFile:
-        messagebox.showerror("Error", "This mod file is not a valid ZIP or Z2F archive.")
+        messagebox.showerror("Error", "This mod file is not a valid Z2F file.")
         dlg.destroy()
         return
 
