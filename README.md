@@ -44,7 +44,7 @@ python modzt.py
 pyinstaller --onefile --noconsole --icon=assets/modzt.ico modzt.py
 
 ## Notice
-ModZT is a beta program. If you run into any bugs, please report them on Github Issues!
+If you run into any bugs, please report them on Github Issues!
 
 This project is not affiliated with Microsoft, Xbox Game Studios, or Blue Fang Games.
 
@@ -74,6 +74,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 
