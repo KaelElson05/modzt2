@@ -5,14 +5,11 @@ import sqlite3
 import subprocess
 import json
 import zipfile
-import socket
 import tempfile
 import threading
 import requests
 import platform
 import datetime
-import online_manager
-import state_manager
 import time
 import tkinter as tk
 import tkinter.simpledialog as simpledialog
@@ -36,11 +33,11 @@ db_lock = threading.Lock()
 if platform.system() == "Windows":
     import ctypes
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(u"modzt")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(u"ModZT.App")
     except Exception:
         pass
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 SETTINGS_FILE = "settings.json"
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.abspath("."))
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".zt2_manager")
@@ -53,13 +50,11 @@ ICON_FILE = os.path.join(CONFIG_DIR, "modzt.ico")
 BANNER_FILE = os.path.join(CONFIG_DIR, "banner.png")
 FILEMAP_CACHE = os.path.join(CONFIG_DIR, "mod_filemap.json")
 GITHUB_REPO = "kaelelson05/modzt"
-SERVER_URL = "http://localhost:5000"
 
 GAME_PATH = None
 ZT1_PATH = None
 ZT1_MOD_DIR = None
 ZT2_EXE = None
-_client_socket = None
 
 if os.path.isfile(GAME_PATH_FILE):
     with open(GAME_PATH_FILE, "r", encoding="utf-8") as f:
@@ -76,13 +71,13 @@ if os.path.isfile(ZT1_MOD_DIR_FILE):
 if GAME_PATH and os.path.isdir(GAME_PATH):
     ZT2_EXE = os.path.join(GAME_PATH, "zt.exe")
     if os.path.exists(ZT2_EXE):
-        online_manager.ZT2_PATH = ZT2_EXE
-        print(f"[Online] ZT2 path registered: {ZT2_EXE}")
+        ZT2_PATH = ZT2_EXE
+        print(f"ZT2 path registered: {ZT2_EXE}")
     else:
-        print("[Online] Warning: zt.exe not found in configured path.")
+        print("Warning: zt.exe not found in configured path.")
 else:
-    online_manager.ZT2_PATH = None
-    print("[Online] ZT2 path not yet set; will register once chosen.")
+    ZT2_PATH = None
+    print("ZT2 path not yet set; will register once chosen.")
 
 if os.path.isfile(ZT1_EXE_FILE):
     with open(ZT1_EXE_FILE, "r", encoding="utf-8") as f:
@@ -333,12 +328,6 @@ def mods_enabled_dir():
     return base
 
 
-def mods_disabled_dir():
-    base = os.path.join(os.getenv("APPDATA"), "ModZT", "mods_disabled")
-    os.makedirs(base, exist_ok=True)
-    return base
-
-
 def save_game_path(p):
     with open(GAME_PATH_FILE, "w", encoding="utf-8") as f:
         f.write(p)
@@ -431,120 +420,6 @@ def check_for_updates():
     except requests.RequestException as e:
         messagebox.showerror("Update Check Failed",
                              f"Could not contact GitHub:\n{e}")
-
-
-def get_local_ip():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except:
-        return "Unknown"
-
-
-def stop_host():
-    try:
-        status_var.set("Status: Stopping server...")
-        online_tab.update_idletasks()
-
-        if hasattr(online_manager, "stop_host"):
-            online_manager.stop_host()
-        else:
-            print("[Online] stop_host() not found in online_manager")
-
-        online_tab.after(0, lambda: status_var.set("Status: Server stopped."))
-
-    except Exception as e:
-        print(f"[Online] Stop error: {e}")
-        online_tab.after(0,
-                         lambda: status_var.set(f"Status: Stop error — {e}"))
-
-
-def refresh_connection_info():
-
-    def loop():
-        while True:
-            local, public, port = online_manager.get_connection_info()
-            local_ip_var.set(f"Local IP: {local}")
-            public_ip_var.set(f"Public IP: {public}")
-            port_var.set(f"Port: {port}")
-            time.sleep(5)
-
-    threading.Thread(target=loop, daemon=True).start()
-
-
-refresh_connection_info()
-
-
-def host_session():
-    try:
-        status_var.set("Status: Starting host server...")
-        online_tab.update_idletasks()
-
-        if online_manager.start_host():
-            online_manager.start_save_watcher()
-            status_var.set("Status: Hosting active. Save sync enabled.")
-        else:
-            status_var.set("Status: Failed to start host.")
-
-        update_connection_info_now()
-
-    except Exception as e:
-        status_var.set(f"Status: Error starting host — {e}")
-        messagebox.showerror("Error", f"Failed to host session:\n{e}")
-
-
-def join_session_dialog():
-    ip_text = simpledialog.askstring("Join Session",
-                                     "Enter host (IP or host:port):")
-    if not ip_text:
-        return
-
-    host = ip_text.strip()
-    port = None
-    if ":" in host:
-        host, port_str = host.rsplit(":", 1)
-        try:
-            port = int(port_str)
-        except ValueError:
-            messagebox.showerror("Connection Error",
-                                 f"Invalid port: {port_str}")
-            return
-
-    try:
-        sock = None
-        if port is not None and hasattr(online_manager, "join_session"):
-            try:
-                sock = online_manager.join_session(host, port)
-            except TypeError:
-                sock = online_manager.join_session(host)
-        else:
-            sock = online_manager.join_session(
-                host, port
-            ) if port is not None else online_manager.join_session(host)
-
-        endpoint = f"{host}:{port}" if port else host
-        if sock:
-            _client_socket = sock
-            status_var.set("Status: Connected to host.")
-            messagebox.showinfo("Connected",
-                                f"Connected to host at {endpoint}.")
-            log(f"[Online] Connected to host {endpoint}", log_text)
-        else:
-            status_var.set("Status: Connection failed.")
-            messagebox.showerror("Connection Error",
-                                 f"Could not connect to {endpoint}.")
-            log(f"[Online] Connection failed to {endpoint}", log_text)
-
-    except Exception as e:
-        messagebox.showerror(
-            "Connection Error", f"Could not connect to {host}" +
-            (f":{port}" if port else "") + f"\n\n{e}")
-        status_var.set(f"Status: Error connecting — {e}")
-        log(f"[Online] Connection error: {e}", log_text)
-
 
 def monitor_game_crash(proc, game_name="ZT2", timeout=10):
     start_time = time.time()
@@ -1643,50 +1518,8 @@ _tt = ttk.Label(banner,
                 bootstyle="inverse-dark")
 _tt.pack(side=tk.LEFT)
 
-toolbar = ttk.Frame(root, padding=6, bootstyle="primary")
-toolbar.pack(fill=tk.X)
-
-lbl_game_path = ttk.Label(toolbar,
-                          text=GAME_PATH or "(not set)",
-                          width=80,
-                          bootstyle="secondary")
-lbl_game_path.pack(side=tk.LEFT, padx=(6, 10))
-
-game_menu_btn = ttk.Menubutton(toolbar, text="Game", bootstyle="info-outline")
-game_menu = tk.Menu(game_menu_btn, tearoff=0)
-game_menu.add_command(label="Set ZT1 Path", command=set_zt1_paths)
-game_menu.add_command(
-    label="Set ZT2 Path",
-    command=lambda: set_game_path(lbl_game_path, status_label))
-game_menu.add_command(label="Play ZT1", command=launch_zt1)
-game_menu.add_command(label="Play ZT2", command=launch_game)
-game_menu_btn["menu"] = game_menu
-game_menu_btn.pack(side=tk.LEFT, padx=4)
-
-mods_menu_btn = ttk.Menubutton(toolbar, text="Mods", bootstyle="info-outline")
-mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
-mods_menu.add_command(label="Export Load Order", command=export_load_order)
-mods_menu.add_command(label="Backup Mods", command=backup_mods)
-mods_menu.add_command(label="Restore Mods", command=restore_mods)
-mods_menu_btn["menu"] = mods_menu
-mods_menu_btn.pack(side=tk.LEFT, padx=4)
-
-tools_menu_btn = ttk.Menubutton(toolbar,
-                                text="Tools",
-                                bootstyle="info-outline")
-tools_menu = tk.Menu(tools_menu_btn, tearoff=0)
-tools_menu.add_command(
-    label="Validate Mods",
-    command=lambda: messagebox.showinfo("Validate Mods",
-                                        "All mods validated successfully."))
-tools_menu.add_command(label="Clean Temporary Files",
-                       command=lambda: messagebox.showinfo(
-                           "Cleanup", "Temporary files cleaned up."))
-tools_menu_btn["menu"] = tools_menu
-tools_menu_btn.pack(side=tk.LEFT, padx=4)
-
-ttk.Separator(toolbar, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8)
-
+toolbar = ttk.Frame(root, padding=6)
+toolbar.pack(side=tk.TOP, fill=tk.X)
 
 def toggle_theme():
     if root.style.theme_use() == 'darkly':
@@ -1702,6 +1535,17 @@ def toggle_ui_mode():
     mode = "Compact" if ui_mode["compact"] else "Expanded"
     log(f"Switched to {mode} mode", text_widget=log_text)
 
+help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
+help_menu = tk.Menu(help_menu_btn, tearoff=0)
+help_menu.add_command(label="About ModZT",
+                      command=lambda: messagebox.showinfo(
+                          "About", "ModZT v1.1.2\nCreated by Kael"))
+help_menu.add_command(
+    label="Open GitHub Page",
+    command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
+help_menu.add_command(label="Check for Updates", command=check_for_updates)
+help_menu_btn["menu"] = help_menu
+help_menu_btn.pack(side=tk.RIGHT, padx=4)
 
 view_menu_button = ttk.Menubutton(toolbar,
                                   text="View",
@@ -1710,19 +1554,42 @@ view_menu = tk.Menu(view_menu_button, tearoff=0)
 view_menu.add_command(label="Toggle Theme", command=toggle_theme)
 view_menu.add_command(label="Compact Mode", command=toggle_ui_mode)
 view_menu_button["menu"] = view_menu
-view_menu_button.pack(side=tk.LEFT, padx=4)
+view_menu_button.pack(side=tk.RIGHT, padx=4)
 
-help_menu_btn = ttk.Menubutton(toolbar, text="Help", bootstyle="info-outline")
-help_menu = tk.Menu(help_menu_btn, tearoff=0)
-help_menu.add_command(label="About ModZT",
-                      command=lambda: messagebox.showinfo(
-                          "About", "ModZT v1.1.1\nCreated by Kael"))
-help_menu.add_command(
-    label="Open GitHub Page",
-    command=lambda: webbrowser.open("https://github.com/kaelelson05/modzt"))
-help_menu.add_command(label="Check for Updates", command=check_for_updates)
-help_menu_btn["menu"] = help_menu
-help_menu_btn.pack(side=tk.LEFT, padx=4)
+tools_menu_btn = ttk.Menubutton(toolbar,
+                                text="Tools",
+                                bootstyle="info-outline")
+tools_menu = tk.Menu(tools_menu_btn, tearoff=0)
+tools_menu.add_command(
+    label="Validate Mods",
+    command=lambda: messagebox.showinfo("Validate Mods",
+                                        "All mods validated successfully."))
+tools_menu.add_command(label="Clean Temporary Files",
+                       command=lambda: messagebox.showinfo(
+                           "Cleanup", "Temporary files cleaned up."))
+tools_menu_btn["menu"] = tools_menu
+tools_menu_btn.pack(side=tk.RIGHT, padx=4)
+
+ttk.Separator(toolbar, orient="vertical").pack(side=tk.RIGHT, fill=tk.Y, padx=8)
+
+mods_menu_btn = ttk.Menubutton(toolbar, text="Mods", bootstyle="info-outline")
+mods_menu = tk.Menu(mods_menu_btn, tearoff=0)
+mods_menu.add_command(label="Export Load Order", command=export_load_order)
+mods_menu.add_command(label="Backup Mods", command=backup_mods)
+mods_menu.add_command(label="Restore Mods", command=restore_mods)
+mods_menu_btn["menu"] = mods_menu
+mods_menu_btn.pack(side=tk.RIGHT, padx=4)
+
+game_menu_btn = ttk.Menubutton(toolbar, text="Game", bootstyle="info-outline")
+game_menu = tk.Menu(game_menu_btn, tearoff=0)
+game_menu.add_command(label="Set ZT1 Path", command=set_zt1_paths)
+game_menu.add_command(
+    label="Set ZT2 Path",
+    command=lambda: set_game_path)
+game_menu.add_command(label="Play ZT1", command=launch_zt1)
+game_menu.add_command(label="Play ZT2", command=launch_game)
+game_menu_btn["menu"] = game_menu
+game_menu_btn.pack(side=tk.RIGHT, padx=4)
 
 footer = ttk.Frame(root, padding=4)
 footer.pack(fill=tk.X, side=tk.BOTTOM)
@@ -1777,7 +1644,12 @@ ttk.Button(zt1_toolbar,
            command=lambda: disable_selected_zt1_mod()).pack(side=tk.LEFT,
                                                             padx=4)
 ttk.Button(zt1_toolbar,
-           text="Refresh",
+           text="Uninstall",
+           width=10,
+           command=lambda: uninstall_selected_mod()).pack(side=tk.LEFT,
+                                                            padx=4)
+ttk.Button(zt1_toolbar,
+           text="Refresh List",
            width=10,
            command=lambda: refresh_zt1_tree()).pack(side=tk.LEFT, padx=4)
 ttk.Button(
@@ -1890,38 +1762,6 @@ zt1_footer = ttk.Label(zt1_tab,
                        text="Total mods: Total 0 | Enabled 0 | Disabled 0",
                        bootstyle="secondary")
 zt1_footer.pack(anchor="w", padx=6, pady=(2, 0))
-
-zt1_menu = tk.Menu(zt1_tree, tearoff=0)
-zt1_menu.add_command(label="Set Category",
-                     command=lambda: set_zt1_mod_category())
-
-
-def on_zt1_right_click(event):
-    iid = zt1_tree.identify_row(event.y)
-    if iid:
-        zt1_tree.selection_set(iid)
-        zt1_menu.post(event.x_root, event.y_root)
-
-
-zt1_tree.bind("<Button-3>", on_zt1_right_click)
-
-
-def set_zt1_mod_category():
-    selected = zt1_tree.selection()
-    if not selected:
-        return
-    item = zt1_tree.item(selected[0])
-    name = item["values"][0]
-
-    new_cat = simpledialog.askstring("Set Category",
-                                     f"Enter a category for '{name}':",
-                                     parent=root)
-    if new_cat:
-        cursor.execute("UPDATE zt1_mods SET category=? WHERE name=?",
-                       (new_cat, name))
-        conn.commit()
-        refresh_zt1_tree()
-
 
 def sort_zt1_tree(col, reverse=False):
     data = [(zt1_tree.set(k, col), k) for k in zt1_tree.get_children("")]
@@ -2164,9 +2004,6 @@ refresh_btn.pack(side=tk.LEFT, padx=4)
 
 bundles_tab = ttk.Frame(notebook, padding=6)
 notebook.add(bundles_tab, text="Bundles")
-
-explorer_tab = ttk.Frame(notebook, padding=6)
-notebook.add(explorer_tab, text="Explorer")
 
 shots_tab = ttk.Frame(notebook, padding=6)
 notebook.add(shots_tab, text="Screenshots")
@@ -2440,25 +2277,6 @@ def _on_album_select(event=None):
 
 album_list.bind("<<ListboxSelect>>", _on_album_select)
 
-explorer_split = ttk.PanedWindow(explorer_tab, orient=tk.HORIZONTAL)
-explorer_split.pack(fill=tk.BOTH, expand=True)
-
-folder_tree = ttk.Treeview(explorer_split)
-folder_tree.pack(fill=tk.BOTH, expand=True)
-explorer_split.add(folder_tree, weight=1)
-
-file_list = ttk.Treeview(explorer_split,
-                         columns=("Name", "Size", "Modified"),
-                         show="headings")
-file_list.heading("Name", text="Name")
-file_list.heading("Size", text="Size (KB)")
-file_list.heading("Modified", text="Modified")
-file_list.column("Name", width=250, anchor="w")
-file_list.column("Size", width=100, anchor="e")
-file_list.column("Modified", width=180, anchor="center")
-file_list.pack(fill=tk.BOTH, expand=True)
-explorer_split.add(file_list, weight=3)
-
 content_frame = ttk.Frame(bundles_tab)
 content_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -2724,146 +2542,7 @@ ttk.Label(log_frame, text="Log Output:").pack(anchor='w')
 log_text = tk.Text(log_frame, height=40, wrap='word', state='disabled')
 log_text.pack(fill=tk.BOTH, expand=True)
 
-status_frame = ttk.Frame(root)
-status_frame.pack(side=tk.BOTTOM, fill=tk.X)
-
-online_tab = ttk.Frame(notebook, padding=10)
-notebook.add(online_tab, text="Online")
-
-connection_frame = ttk.Labelframe(online_tab,
-                                  text="Connection Info",
-                                  padding=8)
-connection_frame.pack(fill="x", pady=(0, 8))
-
-local_ip_var = tk.StringVar(value="Local IP: —")
-public_ip_var = tk.StringVar(value="Public IP: —")
-port_var = tk.StringVar(value="Port: —")
-
-ttk.Label(connection_frame, textvariable=local_ip_var).grid(row=0,
-                                                            column=0,
-                                                            sticky="w",
-                                                            padx=6,
-                                                            pady=2)
-ttk.Label(connection_frame, textvariable=public_ip_var).grid(row=1,
-                                                             column=0,
-                                                             sticky="w",
-                                                             padx=6,
-                                                             pady=2)
-ttk.Label(connection_frame, textvariable=port_var).grid(row=2,
-                                                        column=0,
-                                                        sticky="w",
-                                                        padx=6,
-                                                        pady=2)
-
-status_var = tk.StringVar(value="Status: Idle")
-status_label = ttk.Label(online_tab, textvariable=status_var, justify="left")
-status_label.pack(anchor="w", padx=10, pady=(0, 10))
-
-session_frame = ttk.Labelframe(online_tab, text="Session Controls", padding=8)
-session_frame.pack(fill="x", pady=(0, 8))
-
-button_row = ttk.Frame(session_frame)
-button_row.pack(fill="x", pady=4)
-
-ttk.Button(button_row,
-           text="Host Session",
-           bootstyle="success",
-           command=lambda: host_session()).pack(side="left", padx=6)
-ttk.Button(button_row,
-           text="Stop Hosting",
-           bootstyle="danger",
-           command=stop_host).pack(side="left", padx=6)
-ttk.Button(button_row,
-           text="Join Session",
-           bootstyle="primary",
-           command=lambda: join_session_dialog()).pack(side="left", padx=6)
-
-clients_frame = ttk.Labelframe(online_tab, text="Connected Clients", padding=8)
-clients_frame.pack(fill="both", expand=True)
-
-clients_listbox = tk.Listbox(clients_frame, height=8)
-clients_listbox.pack(fill="both", expand=True, padx=6, pady=4)
-
-zoo_state_var = tk.StringVar(value="Zoo State: Waiting for updates...")
-zoo_state_label = ttk.Label(online_tab,
-                            textvariable=zoo_state_var,
-                            font=("Segoe UI", 9),
-                            justify="left")
-zoo_state_label.pack(anchor="w", padx=10, pady=(4, 10))
-
-
-def update_connection_info_now():
-
-    def on_info(local, public, port):
-        online_tab.after(
-            0, lambda: (local_ip_var.set(f"Local IP: {local}"),
-                        public_ip_var.set(f"Public IP: {public}"),
-                        port_var.set(f"Port: {port}")))
-
-    try:
-        online_manager.get_connection_info(callback=on_info)
-    except Exception as e:
-        online_tab.after(
-            0, lambda:
-            (local_ip_var.set("Local IP: Error"),
-             public_ip_var.set(f"Public IP: {e}"), port_var.set("Port: —")))
-
-
-def update_connection_info_now():
-
-    def on_info(local, public, port):
-        online_tab.after(
-            0, lambda: (local_ip_var.set(f"Local IP: {local}"),
-                        public_ip_var.set(f"Public IP: {public}"),
-                        port_var.set(f"Port: {port}")))
-
-    try:
-        online_manager.get_connection_info(callback=on_info)
-    except Exception as e:
-        online_tab.after(
-            0, lambda:
-            (local_ip_var.set("Local IP: Error"),
-             public_ip_var.set(f"Public IP: {e}"), port_var.set("Port: —")))
-
-
-def refresh_connection_info():
-
-    def loop():
-        while True:
-            update_connection_info_now()
-            time.sleep(5)
-
-    threading.Thread(target=loop, daemon=True).start()
-
-
-refresh_connection_info()
-update_connection_info_now()
-
-
-def update_client_list(clients):
-    clients_listbox.delete(0, tk.END)
-    if not clients:
-        clients_listbox.insert(tk.END, "(No connected clients)")
-        return
-    for addr in clients:
-        clients_listbox.insert(tk.END, f"{addr[0]}:{addr[1]}")
-
-
-online_manager.set_client_update_callback(update_client_list)
-
-
-def update_zoo_state_ui(diff):
-    summary = " | ".join(f"{k.capitalize()}: {v}" for k, v in diff.items())
-    zoo_state_var.set(f"Zoo State: {summary}")
-
-
-state_manager.set_ui_callback(update_zoo_state_ui)
-
-update_connection_info_now()
-
-
 def refresh_tree():
-    """Rebuilds mod list UI from both filesystem and DB."""
     mods_tree.delete(*mods_tree.get_children())
 
     enabled_dir = mods_enabled_dir()
@@ -2975,58 +2654,6 @@ def sort_tree_by(column):
                           command=lambda c=col: sort_tree_by(c))
 
 
-def populate_folder_tree(parent_node, path):
-    for item in os.listdir(path):
-        full_path = os.path.join(path, item)
-        if os.path.isdir(full_path):
-            node = folder_tree.insert(parent_node,
-                                      "end",
-                                      text=item,
-                                      values=[full_path])
-            folder_tree.insert(node, "end", text="Loading...")
-
-
-def on_open_folder(event):
-    node = folder_tree.focus()
-    children = folder_tree.get_children(node)
-    if len(children) == 1 and folder_tree.item(children[0],
-                                               "text") == "Loading...":
-        folder_tree.delete(children[0])
-        path = folder_tree.item(node, "values")[0]
-        populate_folder_tree(node, path)
-
-
-def on_select_folder(event):
-    node = folder_tree.focus()
-    path = folder_tree.item(node, "values")[0]
-    if not os.path.isdir(path):
-        return
-
-    file_list.delete(*file_list.get_children())
-
-    for f in os.listdir(path):
-        fp = os.path.join(path, f)
-        if os.path.isfile(fp):
-            size_kb = os.path.getsize(fp) / 1024
-            modified = time.strftime("%Y-%m-%d %H:%M:%S",
-                                     time.localtime(os.path.getmtime(fp)))
-            file_list.insert("", "end", values=(f, f"{size_kb:.1f}", modified))
-
-
-def load_explorer_roots():
-    if not GAME_PATH:
-        return
-    folder_tree.delete(*folder_tree.get_children())
-    for folder_name in ["Mods", os.path.join("Mods", "Disabled")]:
-        full_path = os.path.join(GAME_PATH, folder_name)
-        if os.path.isdir(full_path):
-            node = folder_tree.insert("",
-                                      "end",
-                                      text=folder_name,
-                                      values=[full_path])
-            folder_tree.insert(node, "end", text="Loading...")
-
-
 def apply_tree_theme():
     if root.style.theme_use() == 'darkly':
         mods_tree.tag_configure('enabled', foreground='#5efc82')
@@ -3050,7 +2677,7 @@ def apply_ui_mode():
     style.configure("Treeview.Heading", font=("Segoe UI", font_size, "bold"))
 
     padding = 2 if compact else 6
-    for frame in [toolbar, mods_tab, bundles_tab, log_frame, status_frame]:
+    for frame in [toolbar, mods_tab, bundles_tab, log_frame]:
         try:
             frame.configure(padding=padding)
         except tk.TclError:
@@ -3380,12 +3007,9 @@ def on_export_bundle_as_mod():
         return
     export_bundle_as_mod_ui(name)
 
-
 def update_status():
-    status_label.config(
-        text=
-        f"ZT2 path: {GAME_PATH or '(not set)'} | {enabled_count()} mods enabled"
-    )
+    pass
+
 
 
 search_var.trace_add('write', lambda *_: filter_tree())
@@ -3444,7 +3068,6 @@ def filter_tree(*_):
 
 refresh_tree()
 apply_ui_mode()
-update_status()
 detect_existing_zt1_mods()
 refresh_zt1_tree()
 
@@ -3460,16 +3083,11 @@ if __name__ == '__main__':
             GAME_PATH = detected
             log(f"✅ Detected Zoo Tycoon 2 installation at: {GAME_PATH}",
                 log_text)
-            try:
-                root.status_label.config(text=f"ZT2 path: {GAME_PATH}")
-            except Exception:
-                pass
+            pass
         else:
             log("⚠️ Could not auto-detect Zoo Tycoon 2 path.", log_text)
 
     root.after(30000, auto_switch_theme)
-    folder_tree.bind("<<TreeviewOpen>>", on_open_folder)
-    folder_tree.bind("<<TreeviewSelect>>", on_select_folder)
 
 
 def on_close():
@@ -3480,9 +3098,8 @@ def on_close():
         print("Error closing DB:", e)
     root.destroy()
 
-    root.protocol("WM_DELETE_WINDOW", on_close)
+root.protocol("WM_DELETE_WINDOW", on_close)
 
 
-load_explorer_roots()
 refresh_screenshots()
 root.mainloop()
